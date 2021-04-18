@@ -2,15 +2,15 @@ package store
 
 import (
 	"github.com/tryfix/kstream/backend"
-	"github.com/tryfix/kstream/kstream/encoding"
+	"github.com/tryfix/kstream/kstream/serdes"
 )
 
 type Iterator interface {
-	SeekToFirst()
-	SeekToLast()
-	Seek(key interface{}) error
-	Next()
-	Prev()
+	//SeekToFirst()
+	//SeekToLast()
+	//Seek(key interface{}) error
+	Next() bool
+	//Prev()
 	Close()
 	Key() (interface{}, error)
 	Value() (interface{}, error)
@@ -19,63 +19,64 @@ type Iterator interface {
 }
 
 type iterator struct {
-	iterator   backend.Iterator
-	keyEncoder encoding.Encoder
-	valEncoder encoding.Encoder
+	i          backend.Iterator
+	keyEncoder serdes.SerDes
+	valEncoder serdes.SerDes
 }
 
 func (i *iterator) SeekToFirst() {
-	i.iterator.SeekToFirst()
+	i.i.SeekToFirst()
 }
 
 func (i *iterator) SeekToLast() {
-	i.iterator.SeekToLast()
+	i.i.SeekToLast()
 }
 
 func (i *iterator) Seek(key interface{}) error {
-	k, err := i.keyEncoder.Encode(key)
+	k, err := i.keyEncoder.Serialize(key)
 	if err != nil {
 		return err
 	}
 
-	i.iterator.Seek(k)
+	i.i.Seek(k)
 	return nil
 }
 
-func (i *iterator) Next() {
-	i.iterator.Next()
+func (i *iterator) Next() bool {
+	i.i.Next()
+	return i.i.Valid()
 }
 
 func (i *iterator) Prev() {
-	i.iterator.Prev()
+	i.i.Prev()
 }
 
 func (i *iterator) Close() {
-	i.iterator.Close()
+	i.i.Close()
 }
 
 func (i *iterator) Key() (interface{}, error) {
-	k := i.iterator.Key()
+	k := i.i.Key()
 	if len(k) < 1 {
 		return nil, nil
 	}
 
-	return i.keyEncoder.Decode(k)
+	return i.keyEncoder.Deserialize(k)
 }
 
 func (i *iterator) Value() (interface{}, error) {
-	v := i.iterator.Value()
+	v := i.i.Value()
 	if len(v) < 1 {
 		return nil, nil
 	}
 
-	return i.valEncoder.Decode(v)
+	return i.valEncoder.Serialize(v)
 }
 
 func (i *iterator) Valid() bool {
-	return i.iterator.Valid()
+	return i.i.Valid()
 }
 
 func (i *iterator) Error() error {
-	return i.iterator.Error()
+	return i.i.Error()
 }

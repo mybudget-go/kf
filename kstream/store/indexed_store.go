@@ -4,9 +4,9 @@ import (
 	"context"
 	nativeErrors "errors"
 	"fmt"
+	"github.com/tryfix/kstream/kstream/serdes"
 
 	"github.com/tryfix/errors"
-	"github.com/tryfix/kstream/kstream/encoding"
 
 	//goEncoding "encoding"
 	"sync"
@@ -29,7 +29,7 @@ type IndexedStore interface {
 	Store
 	GetIndex(ctx context.Context, name string) (Index, error)
 	Indexes() []Index
-	GetIndexedRecords(ctx context.Context, index string, key interface{}) ([]interface{}, error)
+	GetIndexedRecords(ctx context.Context, indexName string, key interface{}) ([]interface{}, error)
 }
 
 type indexedStore struct {
@@ -38,7 +38,7 @@ type indexedStore struct {
 	mu      *sync.Mutex
 }
 
-func NewIndexedStore(name string, keyEncoder, valEncoder encoding.Encoder, indexes []Index, options ...Options) (IndexedStore, error) {
+func NewIndexedStore(name string, keyEncoder, valEncoder serdes.SerDes, indexes []Index, options ...Options) (IndexedStore, error) {
 	store, err := NewStore(name, keyEncoder, valEncoder, options...)
 	if err != nil {
 		return nil, err
@@ -131,12 +131,12 @@ func (i *indexedStore) Indexes() []Index {
 	return idxs
 }
 
-func (i *indexedStore) GetIndexedRecords(ctx context.Context, index string, key interface{}) ([]interface{}, error) {
+func (i *indexedStore) GetIndexedRecords(ctx context.Context, indexName string, key interface{}) ([]interface{}, error) {
 	i.mu.Lock()
-	idx, ok := i.indexes[index]
+	idx, ok := i.indexes[indexName]
 	i.mu.Unlock()
 	if !ok {
-		return nil, fmt.Errorf(`associate [%s] does not exist`, index)
+		return nil, fmt.Errorf(`associate [%s] does not exist`, indexName)
 	}
 
 	var records []interface{}

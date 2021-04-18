@@ -3,15 +3,15 @@ package store
 import (
 	"context"
 	"github.com/tryfix/kstream/backend"
-	"github.com/tryfix/kstream/kstream/encoding"
+	"github.com/tryfix/kstream/kstream/serdes"
 	"time"
 )
 
 type MockStore struct {
 	name     string
 	backend  backend.Backend
-	kEncoder encoding.Encoder
-	vEncoder encoding.Encoder
+	kEncoder serdes.SerDes
+	vEncoder serdes.SerDes
 }
 
 type MockRecord struct {
@@ -21,7 +21,7 @@ type MockRecord struct {
 	expiry time.Duration
 }
 
-func NewMockStore(name string, kEncode encoding.Encoder, vEncoder encoding.Encoder, backend backend.Backend, records ...MockRecord) Store {
+func NewMockStore(name string, kEncode serdes.SerDes, vEncoder serdes.SerDes, backend backend.Backend, records ...MockRecord) Store {
 	store := &MockStore{
 		name:     name,
 		kEncoder: kEncode,
@@ -46,21 +46,21 @@ func (s *MockStore) Backend() backend.Backend {
 	return s.backend
 }
 
-func (s *MockStore) KeyEncoder() encoding.Encoder {
+func (s *MockStore) KeyEncoder() serdes.SerDes {
 	return s.kEncoder
 }
 
-func (s *MockStore) ValEncoder() encoding.Encoder {
+func (s *MockStore) ValEncoder() serdes.SerDes {
 	return s.vEncoder
 }
 
 func (s *MockStore) Set(ctx context.Context, key interface{}, value interface{}, expiry time.Duration) error {
-	k, err := s.kEncoder.Encode(key)
+	k, err := s.kEncoder.Serialize(key)
 	if err != nil {
 		return err
 	}
 
-	v, err := s.ValEncoder().Encode(value)
+	v, err := s.ValEncoder().Serialize(value)
 	if err != nil {
 		return err
 	}
@@ -68,7 +68,7 @@ func (s *MockStore) Set(ctx context.Context, key interface{}, value interface{},
 }
 
 func (s *MockStore) Get(ctx context.Context, key interface{}) (value interface{}, err error) {
-	k, err := s.kEncoder.Encode(key)
+	k, err := s.kEncoder.Serialize(key)
 	if err != nil {
 		return nil, err
 	}
@@ -82,7 +82,7 @@ func (s *MockStore) Get(ctx context.Context, key interface{}) (value interface{}
 		return nil, nil
 	}
 
-	val, err := s.vEncoder.Decode(v)
+	val, err := s.vEncoder.Serialize(v)
 	if err != nil {
 		return nil, err
 	}
@@ -99,7 +99,7 @@ func (*MockStore) GetAll(ctx context.Context) (Iterator, error) {
 }
 
 func (s *MockStore) Delete(ctx context.Context, key interface{}) error {
-	k, err := s.kEncoder.Encode(key)
+	k, err := s.kEncoder.Serialize(key)
 	if err != nil {
 		return err
 	}

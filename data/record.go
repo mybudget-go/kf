@@ -3,7 +3,6 @@ package data
 import (
 	"bytes"
 	"fmt"
-	"github.com/Shopify/sarama"
 	"github.com/google/uuid"
 	"time"
 )
@@ -13,7 +12,13 @@ import (
 //	All() []*sarama.RecordHeader
 //}
 
-type RecordHeaders []*sarama.RecordHeader
+//RecordHeader stores key and value for a record header
+type RecordHeader struct {
+	Key   []byte
+	Value []byte
+}
+
+type RecordHeaders []RecordHeader
 
 func (h RecordHeaders) Read(name []byte) []byte {
 	for _, header := range h {
@@ -25,7 +30,7 @@ func (h RecordHeaders) Read(name []byte) []byte {
 	return nil
 }
 
-func (h RecordHeaders) All() []*sarama.RecordHeader {
+func (h RecordHeaders) All() []RecordHeader {
 	return h
 }
 

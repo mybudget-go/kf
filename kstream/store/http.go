@@ -365,7 +365,7 @@ func MakeEndpoints(host string, registry Registry, logger log.Logger) {
 			}
 			return
 		}
-		decodedKey, err := stor.KeyEncoder().Decode(keyByte)
+		decodedKey, err := stor.KeyEncoder().Deserialize(keyByte)
 		//@FIXME
 		//keyInt, err := strconv.Atoi(key)
 		if err != nil {

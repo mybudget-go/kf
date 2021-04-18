@@ -1,47 +1,36 @@
 package topology
 
-import "context"
+import (
+	"github.com/tryfix/kstream/kstream/store"
+)
 
-type TopologyBuilder struct {
-	Source            SourceBuilder
-	SourceNodeBuilder NodeBuilder
+type Topology interface {
+	//Stores() store.Registry
+	SubTopologies() []SubTopology
+	Describe() string
 }
 
-func (tb TopologyBuilder) Build() (Topology, error) {
-
-	topology := Topology{}
-
-	sourceNode, err := tb.SourceNodeBuilder.Build()
-	if err != nil {
-		return topology, err
-	}
-
-	source, err := tb.Source.Build()
-	if err != nil {
-		return topology, err
-	}
-
-	topology.SourceNode = sourceNode
-	topology.Source = source
-
-	return topology, nil
+type kTopology struct {
+	stores       store.Registry
+	streams      []SubTopology
+	globalTables []SubTopology
 }
 
-type Topology struct {
-	Source     Source
-	SourceNode Node
+func (k *kTopology) Stores() store.Registry {
+	return k.stores
 }
 
-func (t Topology) Run(ctx context.Context, kIn, vIn []byte) (kOut, vOut interface{}, err error) {
-	kOut, vOut, err = t.Source.Run(ctx, kIn, vIn)
+func (k *kTopology) SubTopologies() []SubTopology {
+	return k.streams
+}
+
+func (k *kTopology) Describe() string {
+	viz := NewTopologyVisualizer()
+	viz.AddTopology(k)
+	st, err := viz.Visualize()
 	if err != nil {
-		return nil, nil, err
+		panic(err)
 	}
 
-	_, _, _, err = t.SourceNode.Run(ctx, kOut, vOut)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return
+	return st
 }

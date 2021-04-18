@@ -3,7 +3,7 @@ package store
 import (
 	"errors"
 	"fmt"
-	"github.com/tryfix/kstream/kstream/encoding"
+	"github.com/tryfix/kstream/kstream/serdes"
 	"github.com/tryfix/log"
 	"github.com/tryfix/metrics"
 	"sync"
@@ -11,8 +11,8 @@ import (
 
 type Registry interface {
 	Register(store Store)
-	New(name string, keyEncoder, valEncoder encoding.Builder, options ...Options) Store
-	NewIndexedStore(name string, keyEncoder, valEncoder encoding.Builder, indexes []Index, options ...Options) IndexedStore
+	New(name string, keyEncoder, valEncoder serdes.SerDes, options ...Options) Store
+	NewIndexedStore(name string, keyEncoder, valEncoder serdes.SerDes, indexes []Index, options ...Options) IndexedStore
 	Store(name string) (Store, error)
 	Index(name string) (Index, error)
 	Stores() []Store
@@ -68,7 +68,7 @@ func (r *registry) Register(store Store) {
 		r.logger.Fatal(fmt.Sprintf(`store [%s] already exist`, name))
 	}
 
-	// if store is an IndexedStore store register Indexes
+	// if store is an IndexedStore register Indexes
 	if stor, ok := store.(IndexedStore); ok {
 		for _, idx := range stor.Indexes() {
 			r.indexes[idx.String()] = idx
@@ -78,7 +78,7 @@ func (r *registry) Register(store Store) {
 	r.stores[name] = store
 }
 
-func (r *registry) New(name string, keyEncoder encoding.Builder, valEncoder encoding.Builder, options ...Options) Store {
+func (r *registry) New(name string, keyEncoder serdes.SerDes, valEncoder serdes.SerDes, options ...Options) Store {
 	if _, ok := r.stores[name]; ok {
 		r.logger.Fatal(fmt.Sprintf(`store [%s] already exist`, name))
 	}
@@ -93,7 +93,7 @@ func (r *registry) New(name string, keyEncoder encoding.Builder, valEncoder enco
 	return r.stores[name]
 }
 
-func (r *registry) NewIndexedStore(name string, keyEncoder, valEncoder encoding.Builder, indexes []Index, options ...Options) IndexedStore {
+func (r *registry) NewIndexedStore(name string, keyEncoder, valEncoder serdes.SerDes, indexes []Index, options ...Options) IndexedStore {
 	if _, ok := r.stores[name]; ok {
 		r.logger.Fatal(fmt.Sprintf(`store [%s] already exist`, name))
 	}

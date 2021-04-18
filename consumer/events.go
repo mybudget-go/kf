@@ -7,56 +7,22 @@
 
 package consumer
 
-import "fmt"
+import (
+	"fmt"
+)
 
 type Event interface {
 	String() string
 }
 
-type PartitionAllocated struct {
-	tps []TopicPartition
-}
-
-func (p *PartitionAllocated) String() string {
-	return fmt.Sprintf(`%v`, p.tps)
-}
-
-func (p *PartitionAllocated) TopicPartitions() []TopicPartition {
-	return p.tps
-}
-
-type PartitionRemoved struct {
-	tps []TopicPartition
-}
-
-func (p *PartitionRemoved) String() string {
-	return fmt.Sprintf(`%v`, p.tps)
-}
-
-func (p *PartitionRemoved) TopicPartitions() []TopicPartition {
-	return p.tps
-}
-
 type PartitionEnd struct {
-	tps []TopicPartition
+	Tps []TopicPartition
 }
 
 func (p *PartitionEnd) String() string {
-	return fmt.Sprintf(`%v`, p.tps)
+	return fmt.Sprintf(`%v`, p.Tps)
 }
 
 func (p *PartitionEnd) TopicPartitions() []TopicPartition {
-	return p.tps
-}
-
-type Error struct {
-	err error
-}
-
-func (p *Error) String() string {
-	return fmt.Sprint(`consumer error`, p.err)
-}
-
-func (p *Error) Error() string {
-	return fmt.Sprint(`consumer error`, p.err)
+	return p.Tps
 }

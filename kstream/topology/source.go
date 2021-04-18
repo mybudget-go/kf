@@ -1,32 +1,27 @@
 package topology
 
 import (
-	"context"
+	"github.com/tryfix/kstream/kstream/serdes"
 )
 
-type SourceBuilder interface {
-	Name() string
-	Info() map[string]string
-	SourceType() string
-	Build() (Source, error)
+type RawRecord interface {
+	Key() []byte
+	Val() []byte
 }
 
-type SinkBuilder interface {
-	NodeBuilder
-	Name() string
-	ID() int32
-	Info() map[string]string
-	SinkType() string
+type SourceDeserializer struct {
+	Key, Value serdes.Deserializer
 }
 
 type Source interface {
-	Run(ctx context.Context, kIn, vIn []byte) (kOut, vOut interface{}, err error)
-	Name() string
-	Close()
-}
-
-type Sink interface {
 	Node
-	Name() string
-	Close() error
+	NodeBuilder
+	//WriteBuffer() chan <- RawRecord
+	Deserializer() SourceDeserializer
+
+	// Start opens the source WriteBuffer channel
+	//Start() error
+
+	// drain the recode channel and close
+	//Close() error
 }

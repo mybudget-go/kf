@@ -4,10 +4,16 @@ import (
 	"context"
 	"github.com/tryfix/errors"
 	"github.com/tryfix/kstream/kstream/topology"
+	"github.com/tryfix/kstream/kstream/util"
+)
+
+const (
+	SideLeft  = `LEFT`
+	SideRight = `RIGHT`
 )
 
 type SideJoiner struct {
-	Id            int32
+	NId           util.NodeId
 	Side          string
 	LeftWindow    *Window
 	RightWindow   *Window
@@ -35,7 +41,7 @@ func (sj *SideJoiner) Build() (topology.Node, error) {
 		RightWindow: sj.RightWindow,
 		ValueMapper: sj.ValueMapper,
 		childs:      childs,
-		Id:          sj.Id,
+		NId:         sj.Id(),
 	}, nil
 }
 
@@ -56,7 +62,7 @@ func (sj *SideJoiner) Run(ctx context.Context, kIn, vIn interface{}) (kOut, vOut
 	var joinedValue interface{}
 
 	switch sj.Side {
-	case `left`:
+	case SideLeft:
 		v, ok := sj.RightWindow.Read(kIn)
 		if !ok {
 			sj.LeftWindow.Write(kIn, vIn)
@@ -67,7 +73,7 @@ func (sj *SideJoiner) Run(ctx context.Context, kIn, vIn interface{}) (kOut, vOut
 			return nil, nil, false, errors.WithPrevious(err,
 				`value mapper failed`)
 		}
-	case `right`:
+	case SideRight:
 		v, ok := sj.LeftWindow.Read(kIn)
 		if !ok {
 			sj.RightWindow.Write(kIn, vIn)
@@ -93,7 +99,7 @@ func (sj *SideJoiner) Run(ctx context.Context, kIn, vIn interface{}) (kOut, vOut
 }
 
 func (sj *SideJoiner) Type() topology.Type {
-	return topology.Type(sj.Side + `_side_joiner`)
+	return topology.Type(sj.Side + `JOINER`)
 }
 
 func (sj *SideJoiner) Childs() []topology.Node {
@@ -104,6 +110,6 @@ func (sj *SideJoiner) AddChild(node topology.Node) {
 	sj.childs = append(sj.childs, node)
 }
 
-func (sj *SideJoiner) ID() int32 {
-	return sj.Id
+func (sj *SideJoiner) Id() util.NodeId {
+	return sj.NId
 }

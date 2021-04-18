@@ -2,27 +2,45 @@ package topology
 
 import (
 	"context"
+	"fmt"
 )
 
-type Type string
+type NodeId struct {
+	id   int
+	path string
+}
 
-const TypeSource Type = `source`
-const TypeSink Type = `sink`
-const TypeBranch Type = `branch`
-const TypeThrough Type = `through`
-const TypeJoiner Type = `joiner`
-const TypeMaterialize Type = `materializer`
+func NewNodeId(id int, path string) NodeId {
+	return NodeId{
+		id:   id,
+		path: path,
+	}
+}
 
-type Node interface {
-	Run(ctx context.Context, kIn, vIn interface{}) (kOut, vOut interface{}, cont bool, err error)
+func (id NodeId) String() string {
+	return fmt.Sprintf(`%05d`, id.id+1)
+}
+
+type NodeInfo interface {
+	Id() NodeId
+	SetId(id NodeId)
 	Type() Type
-	Childs() []Node
-	AddChild(node Node)
 }
 
 type NodeBuilder interface {
+	NodeInfo
 	Build() (Node, error)
-	Type() Type
-	ChildBuilders() []NodeBuilder
-	AddChildBuilder(builder NodeBuilder)
+	//AddEdge(node NodeBuilder)
+}
+
+type Type struct {
+	Name  string
+	Attrs map[string]string
+}
+
+type Node interface {
+	NodeInfo
+	Run(ctx context.Context, kIn, vIn interface{}) (kOut, vOut interface{}, cont bool, err error)
+	AddEdge(node Node)
+	Edges() []Node
 }

@@ -4,18 +4,18 @@ import (
 	"github.com/tryfix/errors"
 	"github.com/tryfix/kstream/backend"
 	"github.com/tryfix/kstream/data"
-	"github.com/tryfix/kstream/kstream/encoding"
+	"github.com/tryfix/kstream/kstream/serdes"
 )
 
 type stateStore struct {
 	name       string
 	options    *storeOptions
 	backend    backend.Backend
-	keyEncoder encoding.Encoder
-	valEncoder encoding.Encoder
+	keyEncoder serdes.SerDes
+	valEncoder serdes.SerDes
 }
 
-func NewStateStore(name string, keyEncoder encoding.Encoder, valEncoder encoding.Encoder, options ...Options) StateStore {
+func NewStateStore(name string, keyEncoder serdes.SerDes, valEncoder serdes.SerDes, options ...Options) StateStore {
 
 	configs := storeOptions{}
 	configs.apply(options...)
@@ -32,12 +32,12 @@ func (s *stateStore) Name() string {
 }
 
 func (s *stateStore) Set(key interface{}, value interface{}) error {
-	k, err := s.keyEncoder.Encode(key)
+	k, err := s.keyEncoder.Serialize(key)
 	if err != nil {
 		return errors.WithPrevious(err, `key encode err `)
 	}
 
-	v, err := s.valEncoder.Encode(value)
+	v, err := s.valEncoder.Serialize(value)
 	if err != nil {
 		return errors.WithPrevious(err, `key encode err `)
 	}
@@ -46,7 +46,7 @@ func (s *stateStore) Set(key interface{}, value interface{}) error {
 }
 
 func (s *stateStore) Get(key interface{}) (value interface{}, err error) {
-	k, err := s.keyEncoder.Encode(key)
+	k, err := s.keyEncoder.Serialize(key)
 	if err != nil {
 		return nil, errors.WithPrevious(err, `key encode err `)
 	}
@@ -56,7 +56,7 @@ func (s *stateStore) Get(key interface{}) (value interface{}, err error) {
 		return nil, errors.WithPrevious(err, `key encode err `)
 	}
 
-	v, err := s.valEncoder.Decode(byts)
+	v, err := s.valEncoder.Deserialize(byts)
 	if err != nil {
 		return nil, errors.WithPrevious(err, `value decode err `)
 	}

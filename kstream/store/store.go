@@ -6,22 +6,23 @@ import (
 	"github.com/tryfix/errors"
 	"github.com/tryfix/kstream/backend"
 	"github.com/tryfix/kstream/data"
-	"github.com/tryfix/kstream/kstream/changelog"
-	kContext "github.com/tryfix/kstream/kstream/context"
-	"github.com/tryfix/kstream/kstream/encoding"
+	"github.com/tryfix/kstream/kstream/serdes"
 	"github.com/tryfix/log"
 	"time"
 )
 
-type Builder func(name string, keyEncoder, valEncoder encoding.Builder, options ...Options) (Store, error)
-type IndexedStoreBuilder func(name string, keyEncoder, valEncoder encoding.Builder, indexes []Index, options ...Options) (IndexedStore, error)
-type StateStoreBuilder func(name string, keyEncoder, valEncoder encoding.Builder, options ...Options) StateStore
+type RecordVersionExtractor func(ctx context.Context, key, value interface{}) (version int64, err error)
+type RecordVersionWriter func(ctx context.Context, version int64, vIn interface{}) (vOut interface{}, err error)
+
+type Builder func(name string, keyEncoder, valEncoder serdes.SerDes, options ...Options) (Store, error)
+type IndexedStoreBuilder func(name string, keyEncoder, valEncoder serdes.SerDes, indexes []Index, options ...Options) (IndexedStore, error)
+type StateStoreBuilder func(name string, keyEncoder, valEncoder serdes.SerDes, options ...Options) StateStore
 
 type Store interface {
 	Name() string
 	Backend() backend.Backend
-	KeyEncoder() encoding.Encoder
-	ValEncoder() encoding.Encoder
+	KeyEncoder() serdes.SerDes
+	ValEncoder() serdes.SerDes
 	Set(ctx context.Context, key, value interface{}, expiry time.Duration) error
 	Get(ctx context.Context, key interface{}) (value interface{}, err error)
 	GetRange(ctx context.Context, fromKey, toKey interface{}) (map[interface{}]interface{}, error)
@@ -41,12 +42,11 @@ type store struct {
 	backend    backend.Backend
 	name       string
 	logger     log.Logger
-	keyEncoder encoding.Encoder
-	valEncoder encoding.Encoder
-	changelog  changelog.Changelog
+	keyEncoder serdes.SerDes
+	valEncoder serdes.SerDes
 }
 
-func NewStore(name string, keyEncoder encoding.Encoder, valEncoder encoding.Encoder, options ...Options) (Store, error) {
+func NewStore(name string, keyEncoder serdes.SerDes, valEncoder serdes.SerDes, options ...Options) (Store, error) {
 
 	opts := new(storeOptions)
 	opts.apply(options...)
@@ -101,14 +101,14 @@ func (s *store) Name() string {
 }
 
 func (s *store) String() string {
-	return fmt.Sprintf(`Backend: %s\nChangelogInfo: %s`, s.Backend().Name(), s.changelog)
+	return fmt.Sprintf(`Backend: %s`, s.Backend().Name())
 }
 
-func (s *store) KeyEncoder() encoding.Encoder {
+func (s *store) KeyEncoder() serdes.SerDes {
 	return s.keyEncoder
 }
 
-func (s *store) ValEncoder() encoding.Encoder {
+func (s *store) ValEncoder() serdes.SerDes {
 	return s.valEncoder
 }
 
@@ -118,7 +118,7 @@ func (s *store) Backend() backend.Backend {
 
 func (s *store) Set(ctx context.Context, key interface{}, value interface{}, expiry time.Duration) error {
 
-	k, err := s.keyEncoder.Encode(key)
+	k, err := s.keyEncoder.Serialize(key)
 	if err != nil {
 		return errors.WithPrevious(err, fmt.Sprintf(`store [%s] key encode error`, s.name))
 	}
@@ -128,29 +128,29 @@ func (s *store) Set(ctx context.Context, key interface{}, value interface{}, exp
 		return s.backend.Delete(k)
 	}
 
-	v, err := s.valEncoder.Encode(value)
+	v, err := s.valEncoder.Serialize(value)
 	if err != nil {
 		return errors.WithPrevious(err, fmt.Sprintf(`store [%s] key encode err `, s.name))
 	}
 
 	// if changelog enable write record to the changelog
-	if s.changelog != nil {
-		record, err := kContext.RecordFromContext(ctx, k, v)
-		if err != nil {
-			return err
-		}
-
-		if err := s.changelog.Put(ctx, record); err != nil {
-			return err
-		}
-	}
+	//if s.changelog != nil {
+	//	record, err := kContext.RecordFromContext(ctx, k, v)
+	//	if err != nil {
+	//		return err
+	//	}
+	//
+	//	if err := s.changelog.Put(ctx, record); err != nil {
+	//		return err
+	//	}
+	//}
 
 	return s.backend.Set(k, v, expiry)
 }
 
 func (s *store) Get(ctx context.Context, key interface{}) (value interface{}, err error) {
 
-	k, err := s.keyEncoder.Encode(key)
+	k, err := s.keyEncoder.Serialize(key)
 	if err != nil {
 		return nil, errors.WithPrevious(err, fmt.Sprintf(`store [%s] key encode err `, s.name))
 	}
@@ -164,7 +164,7 @@ func (s *store) Get(ctx context.Context, key interface{}) (value interface{}, er
 		return nil, nil
 	}
 
-	v, err := s.valEncoder.Decode(byt)
+	v, err := s.valEncoder.Deserialize(byt)
 	if err != nil {
 		return nil, errors.WithPrevious(err, fmt.Sprintf(`store [%s] value decode err `, s.name))
 	}
@@ -180,10 +180,10 @@ func (s *store) GetRange(ctx context.Context, fromKey interface{}, toKey interfa
 
 	for i.Valid() {
 		if i.Error() != nil {
-			return nil, errors.WithPrevious(i.Error(), fmt.Sprintf(`store [%s] backend key iterator error `, s.name))
+			return nil, errors.WithPrevious(i.Error(), fmt.Sprintf(`store [%s] backend key i error `, s.name))
 		}
 
-		k, err := s.keyEncoder.Decode(i.Key())
+		k, err := s.keyEncoder.Deserialize(i.Key())
 		if err != nil {
 			return nil, errors.WithPrevious(err, fmt.Sprintf(`store [%s] value decode err `, s.name))
 		}
@@ -193,7 +193,7 @@ func (s *store) GetRange(ctx context.Context, fromKey interface{}, toKey interfa
 			i.Next()
 		}
 
-		v, err := s.valEncoder.Decode(i.Value())
+		v, err := s.valEncoder.Deserialize(i.Value())
 		if err != nil {
 			return nil, errors.WithPrevious(err, fmt.Sprintf(`store [%s] value decode err `, s.name))
 		}
@@ -211,29 +211,29 @@ func (s *store) GetAll(ctx context.Context) (Iterator, error) {
 	i.SeekToFirst()
 
 	return &iterator{
-		iterator:   i,
+		i:          i,
 		keyEncoder: s.keyEncoder,
 		valEncoder: s.valEncoder,
 	}, nil
 }
 
 func (s *store) Delete(ctx context.Context, key interface{}) (err error) {
-	k, err := s.keyEncoder.Encode(key)
+	k, err := s.keyEncoder.Serialize(key)
 	if err != nil {
 		return errors.WithPrevious(err, fmt.Sprintf(`store [%s] key encode err `, s.name))
 	}
 
 	// if changelog enable delete record from changelog
-	if s.changelog != nil {
-		record, err := kContext.RecordFromContext(ctx, k, nil)
-		if err != nil {
-			return err
-		}
-
-		if err := s.changelog.Delete(ctx, record); err != nil {
-			return err
-		}
-	}
+	//if s.changelog != nil {
+	//	record, err := kContext.RecordFromContext(ctx, k, nil)
+	//	if err != nil {
+	//		return err
+	//	}
+	//
+	//	if err := s.changelog.Delete(ctx, record); err != nil {
+	//		return err
+	//	}
+	//}
 
 	return s.backend.Delete(k)
 }

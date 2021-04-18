@@ -3,10 +3,11 @@ package join
 import (
 	"context"
 	"github.com/tryfix/kstream/kstream/topology"
+	"github.com/tryfix/kstream/kstream/util"
 )
 
 type StreamJoiner struct {
-	Id            int32
+	NId           util.NodeId
 	childs        []topology.Node
 	childBuilders []topology.NodeBuilder
 }
@@ -26,7 +27,7 @@ func (j *StreamJoiner) Build() (topology.Node, error) {
 
 	return &StreamJoiner{
 		childs: childs,
-		Id:     j.Id,
+		NId:    j.Id(),
 	}, nil
 }
 
@@ -61,39 +62,13 @@ func (j *StreamJoiner) Next() bool {
 }
 
 func (j *StreamJoiner) Type() topology.Type {
-	return topology.Type(`stream_joiner`)
+	return topology.Type(`JOINER`)
 }
 
 func (j *StreamJoiner) Name() string {
 	return `stream_joiner`
 }
 
-func (j *StreamJoiner) ID() int32 {
-	return j.Id
+func (j *StreamJoiner) Id() util.NodeId {
+	return j.NId
 }
-
-//type StreamJoinEncoder struct {
-//	typ reflect.Type
-//}
-//
-//func (s *StreamJoinEncoder) Encode(data interface{}) ([]byte, error) {
-//	s.typ =  reflect.TypeOf(data)
-//	var buf bytes.Buffer
-//	enc := gob.NewEncoder(&buf)
-//	err := enc.Encode(data)
-//	if err != nil {
-//		return nil, err
-//	}
-//	return buf.Bytes(), nil
-//}
-//
-//func (s *StreamJoinEncoder) Decode(data []byte) (interface{}, error) {
-//	decoded := reflect.New(s.typ)
-//	buf := bytes.NewBuffer(data)
-//	dec := gob.NewDecoder(buf)
-//	err := dec.Decode(decoded)
-//	if err != nil {
-//		return decoded.Interface(),err
-//	}
-//	return decoded.Interface(), nil
-//}

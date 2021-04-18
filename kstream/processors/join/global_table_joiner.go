@@ -9,36 +9,39 @@ import (
 )
 
 type GlobalTableJoiner struct {
-	//Topic string
-	Id            int32
-	Typ           Type
-	Store         string
-	KeyMapper     KeyMapper
-	ValueMapper   ValueMapper
-	store         store.Store
-	Registry      store.Registry
-	childBuilders []topology.NodeBuilder
-	childs        []topology.Node
+	NId         topology.NodeId
+	Typ         Type
+	Store       string
+	KeyMapper   KeyMapper
+	ValueMapper ValueMapper
+	store       store.Store
+	Registry    store.Registry
+	edges       []topology.Node
 }
 
-func (j *GlobalTableJoiner) ChildBuilders() []topology.NodeBuilder {
-	return j.childBuilders
+func (j *GlobalTableJoiner) SetId(id topology.NodeId) {
+	j.NId = id
 }
 
-func (j *GlobalTableJoiner) Childs() []topology.Node {
-	return j.childs
+func (j *GlobalTableJoiner) Type() topology.Type {
+	return topology.Type{
+		Name: "GTableJoiner",
+		Attrs: map[string]string{
+			`store`: j.Store,
+		},
+	}
 }
 
-func (j *GlobalTableJoiner) AddChildBuilder(builder topology.NodeBuilder) {
-	j.childBuilders = append(j.childBuilders, builder)
+func (j *GlobalTableJoiner) AddEdge(node topology.Node) {
+	j.edges = append(j.edges, node)
 }
 
-func (j *GlobalTableJoiner) AddChild(node topology.Node) {
-	j.childs = append(j.childs, node)
+func (j *GlobalTableJoiner) Edges() []topology.Node {
+	return j.edges
 }
 
-func (j *GlobalTableJoiner) Next() bool {
-	return true
+func (j *GlobalTableJoiner) Id() topology.NodeId {
+	return j.NId
 }
 
 func (j *GlobalTableJoiner) Run(ctx context.Context, kIn, vIn interface{}) (kOut, vOut interface{}, next bool, err error) {
@@ -47,17 +50,14 @@ func (j *GlobalTableJoiner) Run(ctx context.Context, kIn, vIn interface{}) (kOut
 		return
 	}
 
-	for _, child := range j.childs {
+	for _, child := range j.edges {
 		_, _, next, err := child.Run(ctx, kIn, joined)
 		if err != nil || !next {
 			return nil, nil, false, err
 		}
 	}
-	return kIn, joined, true, err
-}
 
-func (j *GlobalTableJoiner) Type() topology.Type {
-	return topology.TypeJoiner
+	return kIn, joined, true, err
 }
 
 func (j *GlobalTableJoiner) Build() (topology.Node, error) { //TODO: write new build
@@ -67,31 +67,18 @@ func (j *GlobalTableJoiner) Build() (topology.Node, error) { //TODO: write new b
 	}
 	j.store = s
 
-	var childs []topology.Node
-	//var childBuilders []node.NodeBuilder
-
-	for _, childBuilder := range j.childBuilders {
-		child, err := childBuilder.Build()
-		if err != nil {
-			return nil, err
-		}
-
-		childs = append(childs, child)
-	}
-
 	return &GlobalTableJoiner{
-		Id:          j.Id,
+		NId:         j.Id(),
 		Typ:         j.Typ,
 		Store:       j.Store,
 		KeyMapper:   j.KeyMapper,
 		ValueMapper: j.ValueMapper,
 		store:       j.store,
 		Registry:    j.Registry,
-		childs:      childs,
 	}, nil
 }
 
-func (j *GlobalTableJoiner) Join(ctx context.Context, key interface{}, leftVal interface{}) (joinedVal interface{}, err error) {
+func (j *GlobalTableJoiner) Join(ctx context.Context, key, leftVal interface{}) (joinedVal interface{}, err error) {
 
 	// get key from key mapper
 	k, err := j.KeyMapper(key, leftVal)
@@ -125,8 +112,4 @@ func (j *GlobalTableJoiner) Join(ctx context.Context, key interface{}, leftVal i
 
 func (j *GlobalTableJoiner) Name() string {
 	return j.Store
-}
-
-func (j *GlobalTableJoiner) ID() int32 {
-	return j.Id
 }

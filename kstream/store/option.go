@@ -2,16 +2,16 @@ package store
 
 import (
 	"github.com/tryfix/kstream/backend"
-	"github.com/tryfix/kstream/kstream/changelog"
 	"github.com/tryfix/log"
 	"time"
 )
 
 type storeOptions struct {
-	changelog         changelog.Changelog
 	changelogEnable   bool
 	backend           backend.Backend
 	backendBuilder    backend.Builder
+	versionExtractor  RecordVersionExtractor
+	versionWriter     RecordVersionWriter
 	expiry            time.Duration
 	buffered          bool
 	bufferSize        int
@@ -28,18 +28,30 @@ func (c *storeOptions) apply(options ...Options) {
 	}
 }
 
+func WithVersionExtractor(etc RecordVersionExtractor) Options {
+	return func(config *storeOptions) {
+		config.versionExtractor = etc
+	}
+}
+
+func WithVersionWriter(wr RecordVersionWriter) Options {
+	return func(config *storeOptions) {
+		config.versionWriter = wr
+	}
+}
+
 func ChangelogEnabled() Options {
 	return func(config *storeOptions) {
 		config.changelogEnable = true
 	}
 }
 
-func WithChangelog(changelog changelog.Changelog) Options {
-	return func(config *storeOptions) {
-		config.changelog = changelog
-		config.changelogEnable = true
-	}
-}
+//func WithChangelog(changelog changelog.Changelog) Options {
+//	return func(config *storeOptions) {
+//		config.changelog = changelog
+//		config.changelogEnable = true
+//	}
+//}
 
 func Compacated() Options {
 	return func(options *storeOptions) {
