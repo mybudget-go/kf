@@ -17,7 +17,7 @@ type Backend interface {
 	Name() string
 	Set(key []byte, value []byte, expiry time.Duration) error
 	Get(key []byte) ([]byte, error)
-	RangeIterator(fromKy []byte, toKey []byte) Iterator
+	RangeIterator(fromKy []byte, toKey []byte) Iterator // TODO make this the prefix scanner
 	Iterator() Iterator
 	Delete(key []byte) error
 	SetExpiry(time time.Duration)

@@ -1,0 +1,103 @@
+package processors
+
+import (
+	"context"
+	"github.com/gmbyapa/kstream/pkg/errors"
+
+	"github.com/gmbyapa/kstream/streams/stores"
+	"github.com/gmbyapa/kstream/streams/topology"
+)
+
+type StreamJoinerOption func(joiner *StreamJoiner)
+
+type ValueLookupFunc func(ctx context.Context,
+	store stores.ReadOnlyStore, key, leftVal interface{}) (interface{}, error)
+
+var defaultLookupFunc ValueLookupFunc = func(ctx context.Context,
+	store stores.ReadOnlyStore, key, val interface{}) (interface{}, error) {
+	v, err := store.Get(ctx, key)
+	if err != nil {
+		return nil, errors.Wrap(err, `value lockup failed`)
+	}
+
+	return v, nil
+}
+
+type StreamJoiner struct {
+	OtherSideRequired bool
+	CurrentSide       Side
+	OtherStoreName    string
+	ValueMapper       JoinValueMapper
+	ValueLookupFunc   ValueLookupFunc
+
+	otherStore stores.Store
+	topology.DefaultNode
+}
+
+func (sj *StreamJoiner) ReadsFrom() []string {
+	return []string{sj.OtherStoreName}
+}
+
+func (sj *StreamJoiner) Init(ctx topology.NodeContext) error {
+	sj.otherStore = ctx.Store(sj.OtherStoreName)
+
+	return nil
+}
+
+func (sj *StreamJoiner) Build(_ topology.SubTopologyContext) (topology.Node, error) {
+	lookupFunc := defaultLookupFunc
+	if sj.ValueLookupFunc != nil {
+		lookupFunc = sj.ValueLookupFunc
+	}
+
+	return &StreamJoiner{
+		OtherSideRequired: sj.OtherSideRequired,
+		CurrentSide:       sj.CurrentSide,
+		OtherStoreName:    sj.OtherStoreName,
+		ValueMapper:       sj.ValueMapper,
+		ValueLookupFunc:   lookupFunc,
+
+		DefaultNode: sj.DefaultNode,
+	}, nil
+}
+
+func (sj *StreamJoiner) Run(ctx context.Context, kIn, vIn interface{}) (kOut, vOut interface{}, cont bool, err error) {
+	// Get the other side value/values
+	value, err := sj.ValueLookupFunc(ctx, sj.otherStore, kIn, vIn)
+	if err != nil {
+		return nil, nil, false, sj.WrapErrWith(err, `RightTable read failed`)
+	}
+
+	// If other side is required (eg: inner join, or the left side of a left join) then just ignore
+	if value == nil && sj.OtherSideRequired {
+		return sj.Ignore()
+	}
+
+	var l, r interface{}
+	switch sj.CurrentSide {
+	case LeftSide:
+		l, r = vIn, value
+	case RightSide:
+		l, r = value, vIn
+	}
+
+	joinedValue, err := sj.ValueMapper(ctx, l, r)
+	if err != nil {
+		return nil, nil, false, sj.WrapErrWith(err, `value mapper failed`)
+	}
+
+	return sj.Forward(ctx, kIn, joinedValue, true)
+}
+
+func (sj *StreamJoiner) Name() string {
+	return `joiner`
+}
+
+func (sj *StreamJoiner) Type() topology.Type {
+	return topology.Type{
+		Name: "joiner",
+		Attrs: map[string]string{
+			`side`: sj.CurrentSide.String(),
+		},
+	}
+}

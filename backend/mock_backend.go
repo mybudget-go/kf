@@ -38,9 +38,11 @@ func (b *MockBackend) Set(key []byte, value []byte, expiry time.Duration) error 
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	var del = func() {
+	del := func() {
 		time.Sleep(expiry)
-		b.Delete(key)
+		if err := b.Delete(key); err != nil {
+			panic(err)
+		}
 	}
 
 	if expiry > 0 {
