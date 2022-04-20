@@ -82,6 +82,7 @@ type ChangelogSyncerBuilder interface {
 	// Setup setups the changelog by creating changelog topics and offset stores
 	Setup(ctx SubTopologyBuilderContext) error
 	Build(ctx SubTopologyContext, store stores.Store) (ChangelogSyncer, error)
+	BuildLogger(ctx SubTopologyContext, store string) (ChangeLogger, error)
 	Internal() bool
 	Topic() string
 }

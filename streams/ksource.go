@@ -149,7 +149,8 @@ func (s *KSource) Setup(ctx topology.SubTopologySetupContext) error {
 		}
 
 		// The topology only have auto create topics. looking for
-		// autoCreateOptions.partitionedAs to get the number of partitions form the parent
+		// autoCreateOptions.partitionedAs to get the number of
+		// partitions form the parent
 		// TODO what if topology has more than one auto create topics
 		if ctx.MaxPartitionCount() < 1 && s.autoCreateOptions.partitionedAs != nil {
 			topic.NumPartitions = ctx.TopicMeta()[s.autoCreateOptions.partitionedAs.Topic()].NumPartitions

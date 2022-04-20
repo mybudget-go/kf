@@ -12,12 +12,6 @@ import (
 
 type TopicNameFormatter func(topic string) func(ctx topology.BuilderContext, nodeId topology.NodeId) string
 
-var defaultRepartitionedTopicNameFormatter TopicNameFormatter = func(topic string) func(ctx topology.BuilderContext, nodeId topology.NodeId) string {
-	return func(ctx topology.BuilderContext, nodeId topology.NodeId) string {
-		return fmt.Sprintf(`%s-%s-repartition`, ctx.ApplicationId(), topic)
-	}
-}
-
 type DslOptions struct {
 	StreamOptions
 	kSinkOptions   []KSinkOption
@@ -267,7 +261,7 @@ func (k *kStream) Aggregate(store string, aggregatorFunc processors.AggregatorFu
 	optApplyier.encoders.key = k.keyEncoder()
 	optApplyier.encoders.val = k.valEncoder()
 	optApplyier.storeBuilderOpts = append(optApplyier.storeBuilderOpts, state_stores.WithChangelogOptions(
-		state_stores.WithChangelogTopicReplicaCount(k.builder.config.Store.Changelog.ReplicaCount),
+		state_stores.ChangelogWithTopicReplicaCount(k.builder.config.Store.Changelog.ReplicaCount),
 	))
 	optApplyier.apply(opts...)
 
@@ -334,7 +328,11 @@ func (k *kStream) aggregate(store string, aggregatorFunc processors.AggregatorFu
 		optApplyier.encoders.key,
 		optApplyier.encoders.val,
 		append([]state_stores.StoreBuilderOption{
-			state_stores.StoreBuilderWithStoreOption(stores.WithBackendBuilder(k.builder.defaultBuilders.Backend)),
+			state_stores.StoreBuilderWithStoreOption(
+				stores.WithBackendBuilder(k.builder.defaultBuilders.Backend)),
+			state_stores.WithChangelogOptions(
+				state_stores.ChangelogWithTopicTopicNameFormatter(k.builder.config.ChangelogTopicNameFormatter),
+			),
 		}, optApplyier.storeBuilderOpts...)...,
 	)
 
@@ -452,7 +450,7 @@ func (k *kStream) ToTable(store string, options ...TableOpt) Table {
 		tblOpts.storeBuilderOpts = append(
 			tblOpts.storeBuilderOpts,
 			state_stores.WithChangelogOptions(
-				state_stores.WithSourceTopic(k.kSource.Topic()),
+				state_stores.ChangelogWithSourceTopic(k.kSource.Topic()),
 			),
 			// If current stream source topic is used as source, disable logging to prevent circular message loop
 			state_stores.LoggingDisabled(),
@@ -465,6 +463,9 @@ func (k *kStream) ToTable(store string, options ...TableOpt) Table {
 		tblOpts.encoders.val,
 		append([]state_stores.StoreBuilderOption{
 			state_stores.StoreBuilderWithStoreOption(stores.WithBackendBuilder(k.builder.defaultBuilders.Backend)),
+			state_stores.WithChangelogOptions(
+				state_stores.ChangelogWithTopicTopicNameFormatter(k.builder.config.ChangelogTopicNameFormatter),
+			),
 		}, tblOpts.storeBuilderOpts...)...,
 	)
 	k.stpBuilder.AddStore(stor)
@@ -564,8 +565,6 @@ type RepartitionOpts struct {
 }
 
 func (rpOpts *RepartitionOpts) apply(opts ...RepartitionOpt) {
-	// apply default
-	rpOpts.topicNameFormatter = defaultRepartitionedTopicNameFormatter
 	for _, opt := range opts {
 		opt(rpOpts)
 	}
@@ -628,7 +627,7 @@ func RePartitionWithTopicNameFormatter(formatter TopicNameFormatter) Repartition
 
 func (k *kStream) Repartition(topic string, opts ...RepartitionOpt) Stream {
 	rpOpts := new(RepartitionOpts)
-
+	rpOpts.topicNameFormatter = k.builder.config.RepartitionTopicNameFormatter
 	// Use current streams encoders as default encoders if not provided
 	rpOpts.sourceOpts = append(rpOpts.sourceOpts,
 		ConsumeWithKeyEncoder(k.keyEncoder()),

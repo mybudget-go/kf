@@ -1,9 +1,8 @@
 package topology
 
 import (
-	base "context"
+	"context"
 	"fmt"
-
 	"github.com/gmbyapa/kstream/pkg/errors"
 )
 
@@ -35,21 +34,21 @@ func (n *DefaultNode) Edges() []Node {
 }
 
 func (n *DefaultNode) WrapErr(err error) error {
-	return errors.WrapWithFrameSkip(err, fmt.Sprintf(`node error at [%s.%s]`, n.id.SubTopologyId(), n.id), 3)
+	return errors.WrapWithFrameSkip(err, fmt.Sprintf(`node error at [%s.%s(%s)]`, n.id.SubTopologyId(), n.id, n.NodeName()), 3)
 }
 
 func (n *DefaultNode) Err(message string) error {
-	return errors.NewWithFrameSkip(fmt.Sprintf(`%s at [%s.%s]`, message, n.id.SubTopologyId(), n.id), 3)
+	return errors.NewWithFrameSkip(fmt.Sprintf(`%s at [%s.%s(%s)]`, message, n.id.SubTopologyId(), n.id, n.NodeName()), 3)
 }
 
 func (n *DefaultNode) WrapErrWith(err error, message string) error {
-	return errors.WrapWithFrameSkip(err, fmt.Sprintf(`%s at [%s.%s]`, message, n.id.SubTopologyId(), n.id), 3)
+	return errors.WrapWithFrameSkip(err, fmt.Sprintf(`%s at [%s.%s(%s)]`, message, n.id.SubTopologyId(), n.id, n.NodeName()), 3)
 }
 
-func (n *DefaultNode) Forward(ctx base.Context, kIn, vIn interface{}, cont bool) (interface{}, interface{}, bool, error) {
+func (n *DefaultNode) Forward(ctx context.Context, kIn, vIn interface{}, cont bool) (interface{}, interface{}, bool, error) {
 	for _, child := range n.Edges() {
 		_, _, _, err := child.Run(ctx, kIn, vIn)
-		if err != nil { // TODO whats !next
+		if err != nil {
 			return nil, nil, false, err
 		}
 	}
@@ -57,10 +56,10 @@ func (n *DefaultNode) Forward(ctx base.Context, kIn, vIn interface{}, cont bool)
 	return kIn, vIn, cont, nil
 }
 
-func (n *DefaultNode) ForwardAll(ctx base.Context, kvs []KeyValPair, cont bool) (kOut interface{}, vOut interface{}, next bool, err error) {
+func (n *DefaultNode) ForwardAll(ctx context.Context, kvs []KeyValPair, cont bool) (kOut interface{}, vOut interface{}, next bool, err error) {
 	for _, kv := range kvs {
 		kOut, vOut, _, err = n.Forward(ctx, kv.Key, kv.Value, cont)
-		if err != nil { // TODO whats !next
+		if err != nil {
 			return nil, nil, false, err
 		}
 	}

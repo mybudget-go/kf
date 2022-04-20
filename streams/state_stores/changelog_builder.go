@@ -14,12 +14,6 @@ import (
 
 type ChangelogTopicFormatter func(storeName string) func(ctx topology.BuilderContext) string
 
-var defaultNameFormatter ChangelogTopicFormatter = func(storeName string) func(ctx topology.BuilderContext) string {
-	return func(ctx topology.BuilderContext) string {
-		return fmt.Sprintf(`%s-%s-store-changelog`, ctx.ApplicationId(), storeName)
-	}
-}
-
 type topicConfig struct {
 	Name          string
 	Configs       map[string]string
@@ -30,19 +24,25 @@ type topicConfig struct {
 
 type ChangelogBuilderOption func(store *changelogBuilder)
 
-func WithChangelogTopicConfigs(config map[string]string) ChangelogBuilderOption {
+func ChangelogWithTopicConfigs(config map[string]string) ChangelogBuilderOption {
 	return func(builder *changelogBuilder) {
 		builder.topic.Configs = config
 	}
 }
 
-func WithChangelogTopicReplicaCount(count int16) ChangelogBuilderOption {
+func ChangelogWithTopicTopicNameFormatter(fn ChangelogTopicFormatter) ChangelogBuilderOption {
+	return func(builder *changelogBuilder) {
+		builder.topic.NameFormatter = fn
+	}
+}
+
+func ChangelogWithTopicReplicaCount(count int16) ChangelogBuilderOption {
 	return func(builder *changelogBuilder) {
 		builder.topic.Replicas = count
 	}
 }
 
-func WithSourceTopic(topic string) ChangelogBuilderOption {
+func ChangelogWithSourceTopic(topic string) ChangelogBuilderOption {
 	return func(builder *changelogBuilder) {
 		builder.topic.Name = topic
 		builder.topic.internal = false
@@ -60,8 +60,7 @@ func NewChangelogBuilder(store stores.StoreBuilder, opts ...ChangelogBuilderOpti
 	b := &changelogBuilder{
 		storeName: store.Name(),
 		topic: topicConfig{
-			NameFormatter: defaultNameFormatter,
-			Configs:       map[string]string{},
+			Configs: map[string]string{},
 		},
 	}
 
@@ -132,6 +131,13 @@ func (b *changelogBuilder) Build(ctx topology.SubTopologyContext, store stores.S
 		running:     make(chan struct{}, 1),
 		mu:          new(sync.Mutex),
 	}, nil
+}
+
+func (b *changelogBuilder) BuildLogger(ctx topology.SubTopologyContext, store string) (topology.ChangeLogger, error) {
+	return NewChangeLogger(ctx.Producer(), kafka.TopicPartition{
+		Topic:     b.topic.NameFormatter(store)(ctx),
+		Partition: ctx.Partition(),
+	}), nil
 }
 
 func (b *changelogBuilder) createChangelogTopic(ctx topology.SubTopologyBuilderContext) error {

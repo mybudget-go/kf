@@ -156,7 +156,8 @@ func (b *StreamBuilder) KStream(topic string, keyEnc, valEnc encoding.Encoder, o
 
 func (b *StreamBuilder) GlobalTable(topic string, keyEnc, valEnc encoding.Encoder, storeName string, options ...GlobalTableOption) GlobalTable {
 	gTableOpts := newGlobalTableOptsApplier(b.config)
-	gTableOpts.changelogOptions = append(gTableOpts.changelogOptions, state_stores.WithSourceTopic(topic))
+	gTableOpts.changelogOptions = append(gTableOpts.changelogOptions,
+		state_stores.ChangelogWithSourceTopic(topic))
 	gTableOpts.apply(options...)
 
 	src := NewKSource(topic,
@@ -178,6 +179,7 @@ func (b *StreamBuilder) GlobalTable(topic string, keyEnc, valEnc encoding.Encode
 		valEnc,
 		state_stores.UseStoreBuilder(&GlobalStoreBuilderWrapper{store: gTableOpts.store}),
 		state_stores.WithChangelogOptions(gTableOpts.changelogOptions...),
+		state_stores.LoggingDisabled(),
 	)
 
 	sTp := b.tpBuilder.NewKSubTopologyBuilder(topology.KindGlobalTable)

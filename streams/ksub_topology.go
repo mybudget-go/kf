@@ -7,7 +7,6 @@ import (
 )
 
 type KSubTopology struct {
-	//root     topology.Node
 	id       topology.SubTopologyId
 	edges    []topology.Edge
 	nodes    []topology.Node

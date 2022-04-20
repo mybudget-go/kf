@@ -118,80 +118,6 @@ func (c *groupConsumerProvider) NewBuilder(conf *kafka.GroupConsumerConfig) kafk
 	}
 }
 
-/*func NewGroupConsumerAdaptor(config *GroupConsumerConfig) kafka.GroupConsumerBuilder {
-	//defaultConf := NewGroupConsumerConfig()
-	//configure(defaultConf)
-
-	if err := config.Librd.SetKey(`client.id`, config.Id); err != nil {
-		panic(err.Error())
-	}
-
-	var offset string
-	switch config.GroupConsumerConfig.Offsets.Initial {
-	case kafka.Latest:
-		offset = `latest`
-	case kafka.Earliest:
-		offset = `earliest`
-	}
-
-	if err := config.Librd.SetKey(`auto.offset.reset`, offset); err != nil {
-		panic(err)
-	}
-
-	if config.EOSEnabled {
-		config.IsolationLevel = kafka.ReadCommitted
-		if err := config.Librd.SetKey(`enable.auto.commit`, false); err != nil {
-			panic(err.Error())
-		}
-
-		if err := config.Librd.SetKey(`enable.auto.offset.store`, false); err != nil {
-			panic(err.Error())
-		}
-	}
-
-	return func(configure func(*kafka.GroupConsumerConfig)) (kafka.GroupConsumer, error) {
-		defaultConfCopy := config.copy()
-		configure(defaultConfCopy.GroupConsumerConfig)
-
-		if err := defaultConfCopy.Librd.SetKey(`bootstrap.servers`, strings.Join(defaultConfCopy.BootstrapServers, `,`)); err != nil {
-			return nil, errors.New(err.Error())
-		}
-
-		if err := defaultConfCopy.Librd.SetKey(`go.application.rebalance.enable`, false); err != nil {
-			return nil, errors.New(err.Error())
-		}
-
-		if err := defaultConfCopy.Librd.SetKey(`go.events.channel.enable`, false); err != nil {
-			return nil, errors.New(err.Error())
-		}
-
-		if err := defaultConfCopy.Librd.SetKey(`go.logs.channel.enable`, true); err != nil {
-			return nil, errors.New(err.Error())
-		}
-
-		if err := defaultConfCopy.Librd.SetKey(`partition.assignment.strategy`, `range`); err != nil {
-			return nil, errors.New(err.Error())
-		}
-
-		if err := defaultConfCopy.Librd.SetKey(`group.id`, defaultConfCopy.GroupId); err != nil {
-			return nil, errors.New(err.Error())
-		}
-
-		switch defaultConfCopy.IsolationLevel {
-		case kafka.ReadCommitted:
-			if err := defaultConfCopy.Librd.SetKey(`isolation.level`, `read_committed`); err != nil {
-				return nil, errors.New(err.Error())
-			}
-		case kafka.ReadUncommitted:
-			if err := defaultConfCopy.Librd.SetKey(`isolation.level`, `read_uncommitted`); err != nil {
-				return nil, errors.New(err.Error())
-			}
-		}
-
-		return NewGroupConsumer(defaultConfCopy)
-	}
-}*/
-
 func NewGroupConsumer(config *GroupConsumerConfig) (kafka.GroupConsumer, error) {
 	con, err := librdKafka.NewConsumer(config.Librd)
 	if err != nil {
@@ -263,7 +189,7 @@ MAIN:
 			g.config.Logger.Info(`Stopping consumer loop due to stop signal`)
 			break MAIN
 		default:
-			ev := g.consumer.Poll(1000) //TODO make this configurable
+			ev := g.consumer.Poll(int(g.config.MaxPollInterval.Milliseconds()))
 			if ev == nil {
 				continue
 			}

@@ -43,8 +43,8 @@ type NodeInfo interface {
 type NodeBuilder interface {
 	NodeInfo
 	SetId(id NodeId)
-
-	// Setup is only called once when stream app starting (SubTopologyBuilder.Setup())
+	// Setup is called once when stream app starting (SubTopologyBuilder.Setup())
+	// Eg usage: create changelog topics for node
 	Setup(ctx SubTopologySetupContext) error
 	// Build calls with every Consumer PartitionAssignEvent and this method is responsible to create a new instance of
 	// the node
@@ -65,7 +65,8 @@ type Node interface {
 
 type InitableNode interface {
 	Node
-	// Init is called once the Node is build and before starts processing messages. Please refer SubTopology.Init()
+	// Init is called once the Node build is completed and before message processing starts.
+	// Please refer SubTopology.Init()
 	Init(ctx NodeContext) error
 }
 
@@ -93,9 +94,3 @@ type StateBuilder struct {
 }
 
 type StateStoreNameFunc func(store string) string
-
-//type StateFullNodeBuilder interface {
-//	NodeBuilder
-//	//StateBuilder() LoggableStoreBuilder
-//	//StateType() StateType
-//}

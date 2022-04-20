@@ -18,8 +18,10 @@ type Buffer interface {
 }
 
 type BufferConfig struct {
-	// Size defines the min num of records before the flush starts(This includes messages in the state store changelogs). Please note that this value has to be lesser than
-	//  the producer queue.buffering.max.messages
+	// Size defines the min num of records before the flush
+	// starts(This includes messages in the state store changelogs).
+	// Please note that this value has to be lesser than the
+	// producer queue.buffering.max.messages
 	Size int
 	// FlushInterval defines minimum wait time before the flush starts
 	FlushInterval time.Duration
@@ -37,7 +39,7 @@ type buffer struct {
 	logger log.Logger
 }
 
-func newBuffer(config BufferConfig, onFlush OnFlush, logger log.Logger) Buffer {
+func newBuffer(config BufferConfig, onFlush OnFlush, logger log.Logger) *buffer {
 	buf := &buffer{
 		size:     config.Size,
 		mu:       sync.Mutex{},

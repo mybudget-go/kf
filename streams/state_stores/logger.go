@@ -25,16 +25,20 @@ func NewChangeLogger(producer kafka.Producer, tp kafka.TopicPartition) topology.
 	return &changeLogger{producer: producer, tp: tp}
 }
 
-func NewChangeLoggerBuilder(topic ChangelogTopicFormatter) ChangelogLoggerBuilder {
-	return &changeLoggerBuilder{topicFormatter: topic}
-}
-
-func (b *changeLoggerBuilder) Build(ctx topology.SubTopologyContext, store string) (topology.ChangeLogger, error) {
-	return NewChangeLogger(ctx.Producer(), kafka.TopicPartition{
-		Topic:     b.topicFormatter(store)(ctx),
-		Partition: ctx.Partition(),
-	}), nil
-}
+//func NewChangeLoggerBuilder(options ...ChangelogBuilderOption) ChangelogLoggerBuilder {
+//	// Apply default options
+//	for _, opt := range opts {
+//		opt(b)
+//	}
+//	return &changeLoggerBuilder{}
+//}
+//
+//func (b *changeLoggerBuilder) Build(ctx topology.SubTopologyContext, store string) (topology.ChangeLogger, error) {
+//	return NewChangeLogger(ctx.Producer(), kafka.TopicPartition{
+//		Topic:     b.topicFormatter(store)(ctx),
+//		Partition: ctx.Partition(),
+//	}), nil
+//}
 
 func (c *changeLogger) Log(ctx context.Context, key, value []byte) error {
 	record := c.producer.NewRecord(ctx, key, value, c.tp.Topic, c.tp.Partition, time.Now(), nil, ``)

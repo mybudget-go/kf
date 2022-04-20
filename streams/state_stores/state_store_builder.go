@@ -29,12 +29,6 @@ func LoggingDisabled() StoreBuilderOption {
 	}
 }
 
-func ChangeLoggerBuilder(logger ChangelogLoggerBuilder) StoreBuilderOption {
-	return func(builder *stateStoreBuilder) {
-		builder.changeLogger = logger
-	}
-}
-
 func WithNameFunc(fn topology.StateStoreNameFunc) StoreBuilderOption {
 	return func(builder *stateStoreBuilder) {
 		builder.nameFormatter = fn
@@ -76,7 +70,6 @@ type stateStoreBuilder struct {
 	options        []stores.Option
 	store          stores.StoreBuilder
 	nameFormatter  topology.StateStoreNameFunc
-	changeLogger   ChangelogLoggerBuilder
 	changelog      struct {
 		syncerEnabled  bool
 		loggingEnabled bool
@@ -92,7 +85,6 @@ func NewStoreBuilder(name string, keyEncoder encoding.Encoder, valEncoder encodi
 		nameFormatter: func(store string) string {
 			return store
 		},
-		changeLogger: NewChangeLoggerBuilder(defaultNameFormatter),
 	}
 
 	b.changelog.syncerEnabled = true
@@ -106,12 +98,10 @@ func NewStoreBuilder(name string, keyEncoder encoding.Encoder, valEncoder encodi
 		b.store = stores.NewDefaultStoreBuilder(name, keyEncoder, valEncoder, b.options...)
 	}
 
-	if b.changelog.syncerEnabled {
-		b.changelog.builder = NewChangelogBuilder(
-			b.store,
-			b.changelog.options...,
-		)
-	}
+	b.changelog.builder = NewChangelogBuilder(
+		b.store,
+		b.changelog.options...,
+	)
 
 	return b
 }
@@ -139,12 +129,6 @@ func (d *stateStoreBuilder) ValEncoder() encoding.Encoder {
 }
 
 func (d *stateStoreBuilder) Build(ctx topology.SubTopologyContext) (topology.StateStore, error) {
-	// build and attach a changelog syncer
-	logger, err := d.changeLogger.Build(ctx, d.store.Name())
-	if err != nil {
-		return nil, errors.Wrap(err, `changelogSyncer build failed`)
-	}
-
 	storeName := d.NameFormatter(ctx)(d.store.Name())
 	store, err := d.store.Build(storeName, d.options...)
 	if err != nil {
@@ -164,6 +148,11 @@ func (d *stateStoreBuilder) Build(ctx topology.SubTopologyContext) (topology.Sta
 
 	if !d.changelog.loggingEnabled {
 		return stor, nil
+	}
+
+	logger, err := d.changelog.builder.BuildLogger(ctx, d.store.Name())
+	if err != nil {
+		return nil, errors.Wrap(err, `changelogSyncer build failed`)
 	}
 
 	return &loggableStateStoreInstance{

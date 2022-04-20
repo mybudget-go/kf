@@ -8,9 +8,12 @@
 package streams
 
 import (
+	"fmt"
 	"github.com/gmbyapa/kstream/kafka"
 	"github.com/gmbyapa/kstream/pkg/errors"
+	"github.com/gmbyapa/kstream/streams/state_stores"
 	"github.com/gmbyapa/kstream/streams/tasks"
+	"github.com/gmbyapa/kstream/streams/topology"
 	"github.com/tryfix/log"
 	"github.com/tryfix/metrics"
 	"time"
@@ -43,7 +46,7 @@ type Config struct {
 		// StateDir directory to store Persistable state stores
 		StateDir  string
 		Changelog struct {
-			// ReplicaCount store changelog topic(Auto generated) replica count
+			// ReplicaCount store changelog topic(auto generated) replica count
 			ReplicaCount int16
 		}
 	}
@@ -59,7 +62,7 @@ type Config struct {
 		// FailedMessageHandler used to handle failed messages(Process failures and serialization errors)
 		FailedMessageHandler tasks.FailedMessageHandler
 	}
-	// Consumer asdasda
+	// Consumer default consumer properties
 	Consumer *kafka.GroupConsumerConfig
 	// Host application host(used to identify application instances)
 	Host string
@@ -69,6 +72,14 @@ type Config struct {
 	MetricsReporter metrics.Reporter
 	// MetricsReporter default logger(default: NoopLogger)
 	Logger log.Logger
+
+	// RepartitionTopicFormatter repartition topic name formatter function
+	// (default ApplicationId-${storeName}-repartitioned)
+	RepartitionTopicNameFormatter TopicNameFormatter
+
+	// ChangelogTopicNameFormatter changelog topic name formatter function
+	// (default ApplicationId-${storeName}-store-changelog)
+	ChangelogTopicNameFormatter state_stores.ChangelogTopicFormatter
 }
 
 func NewStreamBuilderConfig() *Config {
@@ -89,6 +100,18 @@ func NewStreamBuilderConfig() *Config {
 
 	config.Store.Changelog.ReplicaCount = 1
 	config.InternalTopicsDefaultReplicaCount = 1
+
+	config.RepartitionTopicNameFormatter = func(topic string) func(ctx topology.BuilderContext, nodeId topology.NodeId) string {
+		return func(ctx topology.BuilderContext, nodeId topology.NodeId) string {
+			return fmt.Sprintf(`%s-%s-repartition`, ctx.ApplicationId(), topic)
+		}
+	}
+
+	config.ChangelogTopicNameFormatter = func(storeName string) func(ctx topology.BuilderContext) string {
+		return func(ctx topology.BuilderContext) string {
+			return fmt.Sprintf(`%s-%s-store-changelog`, ctx.ApplicationId(), storeName)
+		}
+	}
 
 	// default metrics reporter
 	config.MetricsReporter = metrics.NoopReporter()

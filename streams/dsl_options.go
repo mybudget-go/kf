@@ -88,7 +88,7 @@ func newTableOptsApplier(config *Config) *TableOpts {
 	opts.storeBuilderOpts = append(
 		opts.storeBuilderOpts,
 		state_stores.WithChangelogOptions(
-			state_stores.WithChangelogTopicReplicaCount(config.Store.Changelog.ReplicaCount),
+			state_stores.ChangelogWithTopicReplicaCount(config.Store.Changelog.ReplicaCount),
 		))
 	return opts
 }

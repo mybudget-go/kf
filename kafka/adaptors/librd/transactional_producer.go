@@ -89,7 +89,7 @@ func (p *librdTxProducer) AbortTransaction(ctx context.Context) error {
 		return errors.Wrap(err, `transaction abort failed`)
 	}
 
-	p.config.Logger.WarnContext(ctx, fmt.Sprintf(`transaction aborted`))
+	p.config.Logger.WarnContext(ctx, fmt.Sprintf(`Transaction aborted`))
 
 	return nil
 }

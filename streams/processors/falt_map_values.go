@@ -35,13 +35,13 @@ func (f *FlatMapValues) Build(ctx topology.SubTopologyContext) (topology.Node, e
 func (f *FlatMapValues) Run(ctx context.Context, kIn, vIn interface{}) (kOut, vOut interface{}, next bool, err error) {
 	values, err := f.FlatMapValuesFunc(ctx, kIn, vIn)
 	if err != nil {
-		return nil, nil, false, f.WrapErrWith(err, `filter error`)
+		return nil, nil, false, f.WrapErrWith(err, `FlatMapValues error`)
 	}
 
 	for _, val := range values {
 		_, _, next, err = f.Forward(ctx, kIn, val, true)
 		if err != nil {
-			return nil, nil, false, f.WrapErrWith(err, `filter error`)
+			return nil, nil, false, f.WrapErrWith(err, `FlatMapValues error`)
 		}
 	}
 

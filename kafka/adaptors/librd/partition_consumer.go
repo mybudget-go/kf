@@ -86,56 +86,6 @@ func (c *consumerProvider) NewBuilder(conf *kafka.ConsumerConfig) kafka.Consumer
 	}
 }
 
-/*func NewPartitionConsumerAdaptor(config *ConsumerConfig) kafka.ConsumerBuilder {
-	//config := NewConsumerConfig()
-	//configure(defaultConf)
-
-	if err := config.Librd.SetKey(`client.id`, config.Id); err != nil {
-		panic(err.Error())
-	}
-
-	if config.EOSEnabled {
-		config.IsolationLevel = kafka.ReadCommitted
-	}
-
-	return func(configure func(*kafka.ConsumerConfig)) (kafka.PartitionConsumer, error) {
-		defaultConfCopy := config.copy()
-		configure(defaultConfCopy.ConsumerConfig)
-		if err := defaultConfCopy.Librd.SetKey(`client.id`, defaultConfCopy.Id); err != nil {
-			return nil, errors.New(err.Error())
-		}
-
-		if err := defaultConfCopy.Librd.SetKey(`bootstrap.servers`, strings.Join(defaultConfCopy.BootstrapServers, `,`)); err != nil {
-			return nil, errors.New(err.Error())
-		}
-
-		if err := defaultConfCopy.Librd.SetKey(`enable.auto.offset.store`, false); err != nil {
-			return nil, errors.New(err.Error())
-		}
-
-		if err := defaultConfCopy.Librd.SetKey(`enable.auto.commit`, false); err != nil {
-			return nil, errors.New(err.Error())
-		}
-
-		if err := defaultConfCopy.Librd.SetKey(`group.id`, uuid.New().String()); err != nil {
-			return nil, errors.New(err.Error())
-		}
-
-		switch defaultConfCopy.IsolationLevel {
-		case kafka.ReadCommitted:
-			if err := defaultConfCopy.Librd.SetKey(`isolation.level`, `read_committed`); err != nil {
-				return nil, errors.New(err.Error())
-			}
-		case kafka.ReadUncommitted:
-			if err := defaultConfCopy.Librd.SetKey(`isolation.level`, `read_uncommitted`); err != nil {
-				return nil, errors.New(err.Error())
-			}
-		}
-
-		return NewPartitionConsumer(defaultConfCopy)
-	}
-}*/
-
 func NewPartitionConsumer(c *ConsumerConfig) (kafka.PartitionConsumer, error) {
 	con, err := librdKafka.NewConsumer(c.Librd)
 	if err != nil {
@@ -208,7 +158,7 @@ func (c *partitionConsumer) ConsumePartition(ctx context.Context, topic string, 
 	}
 
 	pt := &partition{
-		events:         make(chan kafka.Event, 1000), // TODO make this configurable
+		events:         make(chan kafka.Event, c.config.ConsumerMessageChanSize),
 		consumerErrors: make(chan error, 1),
 		logger:         c.logger.NewLog(log.Prefixed(fmt.Sprintf(`%s-%d`, topic, ptt))),
 		metricsReporter: c.metricsReporter.Reporter(metrics.ReporterConf{
@@ -312,7 +262,7 @@ MAIN:
 		case <-c.closing:
 			break MAIN
 		default:
-			ev := c.consumer.Poll(100) // TODO make this configurable
+			ev := c.consumer.Poll(int(c.config.MaxPollInterval.Milliseconds()))
 			if ev == nil {
 				continue
 			}

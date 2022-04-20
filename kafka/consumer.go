@@ -137,11 +137,13 @@ func NewConfig() *GroupConsumerConfig {
 
 func NewPartitionConsumerConfig() *ConsumerConfig {
 	return &ConsumerConfig{
-		IsolationLevel:        ReadCommitted,
-		TopicMetaFetchTimeout: 10 * time.Second,
-		EOSEnabled:            true,
-		Logger:                log.NewNoopLogger(),
-		MetricsReporter:       metrics.NoopReporter(),
+		IsolationLevel:          ReadCommitted,
+		TopicMetaFetchTimeout:   10 * time.Second,
+		EOSEnabled:              true,
+		Logger:                  log.NewNoopLogger(),
+		MetricsReporter:         metrics.NoopReporter(),
+		MaxPollInterval:         1 * time.Second,
+		ConsumerMessageChanSize: 1000,
 	}
 }
 
@@ -153,11 +155,13 @@ func NewOffsetManagerConfig() *OffsetManagerConfig {
 }
 
 type ConsumerConfig struct {
-	Id                    string
-	BootstrapServers      []string
-	IsolationLevel        IsolationLevel
-	TopicMetaFetchTimeout time.Duration
-	EOSEnabled            bool
+	Id                      string
+	BootstrapServers        []string
+	IsolationLevel          IsolationLevel
+	TopicMetaFetchTimeout   time.Duration
+	EOSEnabled              bool
+	MaxPollInterval         time.Duration
+	ConsumerMessageChanSize int
 
 	Logger           log.Logger
 	MetricsReporter  metrics.Reporter
@@ -166,14 +170,16 @@ type ConsumerConfig struct {
 
 func (conf *ConsumerConfig) Copy() *ConsumerConfig {
 	return &ConsumerConfig{
-		Id:                    conf.Id,
-		BootstrapServers:      conf.BootstrapServers,
-		IsolationLevel:        conf.IsolationLevel,
-		EOSEnabled:            conf.EOSEnabled,
-		TopicMetaFetchTimeout: conf.TopicMetaFetchTimeout,
-		Logger:                conf.Logger,
-		MetricsReporter:       conf.MetricsReporter,
-		ContextExtractor:      conf.ContextExtractor,
+		Id:                      conf.Id,
+		BootstrapServers:        conf.BootstrapServers,
+		IsolationLevel:          conf.IsolationLevel,
+		EOSEnabled:              conf.EOSEnabled,
+		TopicMetaFetchTimeout:   conf.TopicMetaFetchTimeout,
+		Logger:                  conf.Logger,
+		MetricsReporter:         conf.MetricsReporter,
+		ContextExtractor:        conf.ContextExtractor,
+		MaxPollInterval:         conf.MaxPollInterval,
+		ConsumerMessageChanSize: conf.ConsumerMessageChanSize,
 	}
 }
 
