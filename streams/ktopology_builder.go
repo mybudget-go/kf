@@ -111,6 +111,12 @@ func (k *kTopologyBuilder) setup(ctx topology.BuilderContext) error {
 	// fetch meta info for sink and source topics (this doesn't include changelog topics)
 	topicMap := map[string]*kafka.TopicConfig{}
 	for _, subTp := range k.SubTopologies() {
+		// Global topologies does not have any auto create options
+		// or co partitioning requirements
+		if subTp.Kind() == topology.KindGlobalTable {
+			continue
+		}
+
 		for _, nd := range subTp.Nodes() {
 			switch sc := nd.(type) {
 			case topology.Source:
@@ -123,6 +129,7 @@ func (k *kTopologyBuilder) setup(ctx topology.BuilderContext) error {
 			case topology.SinkBuilder:
 				if _, ok := topicMap[sc.Topic()]; !ok {
 					topicMap[sc.Topic()] = new(kafka.TopicConfig)
+					topicMap[sc.Topic()].AutoCreate = sc.AutoCreate()
 				}
 			}
 		}
@@ -151,6 +158,11 @@ func (k *kTopologyBuilder) setup(ctx topology.BuilderContext) error {
 		var maxPartitions int32
 		var autoMaxPartitions int32
 		for _, nd := range subTopology.Nodes() {
+			// Global topologies does not have any auto create options
+			// or co partitioning requirements
+			if subTopology.Kind() == topology.KindGlobalTable {
+				break
+			}
 			switch s := nd.(type) {
 			case topology.Source:
 				// Marked as AutoCreate has to be excluded(yet to be created)
@@ -158,7 +170,7 @@ func (k *kTopologyBuilder) setup(ctx topology.BuilderContext) error {
 					if s.RePartitionedAs() != nil {
 						// In each sub topology if the topology contains multiple topics they have to be co-partitioned
 						// including auto generated(eg: changelogs, repartitioned) topics.
-						// In this case if nominated-source-topic(RePartitionedAs)'s partition count is greater than
+						// In this case if nominated-source-topic(RePartitionedAs) partition count is greater than
 						// current autoMaxPartitions then the autoMaxPartitions has to be adjusted to match the source
 						// topic
 						if tpInfo[s.RePartitionedAs().Topic()].NumPartitions > autoMaxPartitions {

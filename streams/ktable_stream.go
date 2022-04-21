@@ -11,6 +11,7 @@ type Table interface {
 	ToStream(opts ...StreamOption) Stream
 	Filter(filter processors.FilterFunc, opts ...StreamOption) Table
 	Join(table Table, valMapper processors.JoinValueMapper, opts ...JoinOption) Table
+	JoinGlobalTable(table GlobalTable, keyMapper processors.KeyMapper, valMapper processors.JoinValueMapper, opts ...JoinOption) Table
 	LeftJoin(table Table, valMapper processors.JoinValueMapper, opts ...JoinOption) Table
 	RightJoin(table Table, valMapper processors.JoinValueMapper, opts ...JoinOption) Table
 	OuterJoin(table Table, valMapper processors.JoinValueMapper, opts ...JoinOption) Table
@@ -36,6 +37,13 @@ func (tbl *kTableStream) stateStore() topology.LoggableStoreBuilder {
 
 func (tbl *kTableStream) Join(table Table, valMapper processors.JoinValueMapper, opts ...JoinOption) Table {
 	return tbl.join(table, valMapper, processors.InnerJoin, opts...)
+}
+
+func (tbl *kTableStream) JoinGlobalTable(table GlobalTable, keyMapper processors.KeyMapper, valMapper processors.JoinValueMapper, opts ...JoinOption) Table {
+	return &kTableStream{
+		kStream: tbl.kStream.JoinGlobalTable(table, keyMapper, valMapper, opts...).(*kStream),
+		store:   tbl.store,
+	}
 }
 
 func (tbl *kTableStream) LeftJoin(table Table, valMapper processors.JoinValueMapper, opts ...JoinOption) Table {

@@ -111,7 +111,7 @@ func (k *kStream) maybeRepartitioned(opts ...RepartitionOpt) *kStream {
 	}
 	k.repartitionOpts.mayBe = append(k.repartitionOpts.mayBe, rePartitionedWithSourceOpts(
 		ConsumeWithAutoTopicCreateEnabled(
-			AutoTopicCreateReplicaCount(k.builder.config.InternalTopicsDefaultReplicaCount),
+			WithReplicaCount(k.builder.config.InternalTopicsDefaultReplicaCount),
 		)))
 	k.repartitionOpts.mayBe = append(k.repartitionOpts.mayBe, opts...)
 	return k
@@ -184,7 +184,7 @@ func (k *kStream) Map(transformer processors.MapperFunc, opts ...StreamOption) S
 		RePartitionAs(fmt.Sprintf(`%s-%s`, k.kSource.Topic(), node.NodeName())),
 		rePartitionedWithSourceOpts(
 			ConsumeWithAutoTopicCreateEnabled(
-				AutoTopicCreatPartitionedAs(k.kSource))))
+				PartitionAs(k.kSource))))
 }
 
 func (k *kStream) Filter(filter processors.FilterFunc, opts ...StreamOption) Stream {
@@ -227,7 +227,7 @@ func (k *kStream) SelectKey(selectKeyFunc processors.SelectKeyFunc, opts ...Stre
 		RePartitionAs(fmt.Sprintf(`%s-%s`, k.kSource.Topic(), node.NodeName())),
 		rePartitionedWithSourceOpts(
 			ConsumeWithAutoTopicCreateEnabled(
-				AutoTopicCreatPartitionedAs(k.kSource))))
+				PartitionAs(k.kSource))))
 }
 
 func (k *kStream) FlatMap(flatMapFunc processors.FlatMapFunc, opts ...StreamOption) Stream {
@@ -242,7 +242,7 @@ func (k *kStream) FlatMap(flatMapFunc processors.FlatMapFunc, opts ...StreamOpti
 		RePartitionAs(fmt.Sprintf(`%s-%s`, k.kSource.Topic(), node.NodeName())),
 		rePartitionedWithSourceOpts(
 			ConsumeWithAutoTopicCreateEnabled(
-				AutoTopicCreatPartitionedAs(k.kSource))))
+				PartitionAs(k.kSource))))
 }
 
 func (k *kStream) FlatMapValues(flatMapFunc processors.FlatMapValuesFunc, opts ...StreamOption) Stream {
@@ -359,7 +359,6 @@ func (k *kStream) JoinGlobalTable(table GlobalTable, keyMapper processors.KeyMap
 		KeyMapper:          keyMapper,
 		ValueMapper:        valMapper,
 		RightKeyLookupFunc: joinOpts.lookupFunc,
-		//OneToMany:          joinOpts.oneToMany,
 	}
 
 	applyNodeOptions(joiner, joinOpts.streamOptions)
@@ -369,6 +368,9 @@ func (k *kStream) JoinGlobalTable(table GlobalTable, keyMapper processors.KeyMap
 }
 
 func (k *kStream) LeftJoinGlobalTable(table GlobalTable, keyMapper processors.KeyMapper, valMapper processors.JoinValueMapper, opts ...JoinOption) Stream {
+	joinOpts := new(JoinOptions)
+	joinOpts.apply(opts...)
+
 	joiner := &processors.GlobalTableJoiner{
 		JoinType:    processors.LeftJoin,
 		Store:       table.Store().Name(),
@@ -376,6 +378,7 @@ func (k *kStream) LeftJoinGlobalTable(table GlobalTable, keyMapper processors.Ke
 		ValueMapper: valMapper,
 	}
 
+	applyNodeOptions(joiner, joinOpts.streamOptions)
 	k.stpBuilder.AddNodeWithEdge(k.rootNode, joiner)
 
 	return k.newChildStream(joiner)
@@ -488,7 +491,7 @@ func (k *kStream) ToTable(store string, options ...TableOpt) Table {
 func (k *kStream) Through(topic string, options ...DslOption) Stream {
 	dslOpts := new(DslOptions)
 	dslOpts.kSinkOptions = []KSinkOption{
-		ProducerWithLogger(k.builder.config.Logger),
+		ProduceWithLogger(k.builder.config.Logger),
 	}
 	dslOpts.apply(options...)
 
@@ -528,101 +531,13 @@ func (k *kStream) Merge(stream Stream) Stream {
 
 func (k *kStream) To(topic string, options ...KSinkOption) {
 	opts := []KSinkOption{
-		ProducerWithLogger(k.builder.config.Logger),
-		ProducerWithKeyEncoder(k.keyEncoder()),
-		ProducerWithValEncoder(k.valEncoder()),
+		ProduceWithLogger(k.builder.config.Logger),
+		ProduceWithKeyEncoder(k.keyEncoder()),
+		ProduceWithValEncoder(k.valEncoder()),
 	}
 	sink := NewKSinkBuilder(topic, append(opts, options...)...)
 
 	k.stpBuilder.AddNodeWithEdge(k.rootNode, sink)
-}
-
-func (k *kStream) topology() topology.SubTopologyBuilder {
-	return k.stpBuilder
-}
-
-func (k *kStream) setSubTopology(topology topology.SubTopologyBuilder) {
-	k.stpBuilder = topology
-}
-
-func (k *kStream) node() topology.NodeBuilder {
-	return k.rootNode
-}
-
-func (k *kStream) source() topology.Source {
-	return k.kSource
-}
-
-type RepartitionOpts struct {
-	topicName          string
-	topicNameFormatter TopicNameFormatter
-	dueTo              struct {
-		node   topology.NodeBuilder
-		source topology.Source
-	}
-	sourceOpts []KSourceOption
-	sinkOpts   []KSinkOption
-}
-
-func (rpOpts *RepartitionOpts) apply(opts ...RepartitionOpt) {
-	for _, opt := range opts {
-		opt(rpOpts)
-	}
-}
-
-type RepartitionOpt func(rpOpts *RepartitionOpts)
-
-func RePartitionAs(topic string) RepartitionOpt {
-	return func(rpOpts *RepartitionOpts) {
-		rpOpts.topicName = topic
-	}
-}
-
-func CoPartitionAs(stream StreamTopology) RepartitionOpt {
-	return func(rpOpts *RepartitionOpts) {
-		rpOpts.sourceOpts = append(rpOpts.sourceOpts, ConsumeWithAutoTopicCreateEnabled(
-			AutoTopicCreatPartitionedAs(stream.source()),
-		))
-	}
-}
-
-func RePartitionWithKeyEncoder(enc encoding.Encoder) RepartitionOpt {
-	return func(rpOpts *RepartitionOpts) {
-		rpOpts.sinkOpts = append(rpOpts.sinkOpts, ProducerWithKeyEncoder(enc))
-		rpOpts.sourceOpts = append(rpOpts.sourceOpts, ConsumeWithKeyEncoder(enc))
-	}
-}
-
-func RePartitionWithValEncoder(enc encoding.Encoder) RepartitionOpt {
-	return func(rpOpts *RepartitionOpts) {
-		rpOpts.sinkOpts = append(rpOpts.sinkOpts, ProducerWithValEncoder(enc))
-		rpOpts.sourceOpts = append(rpOpts.sourceOpts, ConsumeWithValEncoder(enc))
-	}
-}
-
-func RePartitionWithPartitioner(partitioner Partitioner) RepartitionOpt {
-	return func(rpOpts *RepartitionOpts) {
-		rpOpts.sinkOpts = append(rpOpts.sinkOpts, ProduceWithPartitioner(partitioner))
-	}
-}
-
-func rePartitionedFromSource(node topology.NodeBuilder, source topology.Source) RepartitionOpt {
-	return func(rpOpts *RepartitionOpts) {
-		rpOpts.dueTo.node = node
-		rpOpts.dueTo.source = source
-	}
-}
-
-func rePartitionedWithSourceOpts(opts ...KSourceOption) RepartitionOpt {
-	return func(rpOpts *RepartitionOpts) {
-		rpOpts.sourceOpts = append(rpOpts.sourceOpts, opts...)
-	}
-}
-
-func RePartitionWithTopicNameFormatter(formatter TopicNameFormatter) RepartitionOpt {
-	return func(rpOpts *RepartitionOpts) {
-		rpOpts.topicNameFormatter = formatter
-	}
 }
 
 func (k *kStream) Repartition(topic string, opts ...RepartitionOpt) Stream {
@@ -633,13 +548,13 @@ func (k *kStream) Repartition(topic string, opts ...RepartitionOpt) Stream {
 		ConsumeWithKeyEncoder(k.keyEncoder()),
 		ConsumeWithValEncoder(k.valEncoder()),
 		ConsumeWithAutoTopicCreateEnabled(
-			AutoTopicCreateReplicaCount(k.builder.config.InternalTopicsDefaultReplicaCount),
+			WithReplicaCount(k.builder.config.InternalTopicsDefaultReplicaCount),
 		),
 	)
 
 	rpOpts.sinkOpts = append(rpOpts.sinkOpts,
-		ProducerWithKeyEncoder(k.keyEncoder()),
-		ProducerWithValEncoder(k.valEncoder()),
+		ProduceWithKeyEncoder(k.keyEncoder()),
+		ProduceWithValEncoder(k.valEncoder()),
 	)
 
 	// if marked for repartition apply those options as well
@@ -661,7 +576,7 @@ func (k *kStream) Repartition(topic string, opts ...RepartitionOpt) Stream {
 
 	// Sink options overrides
 	sinkOpts := append([]KSinkOption{
-		ProducerWithTopicNameFormatter(rpOpts.topicNameFormatter),
+		ProduceWithTopicNameFormatter(rpOpts.topicNameFormatter),
 		// Copy source message headers to repartition topic
 		//ProduceWithHeadersExtractor(func(ctx context.Context, key, val interface{}) kafka.RecordHeaders {
 		//	return topology.RecordFromContext(ctx).Headers()
@@ -678,12 +593,21 @@ func (k *kStream) Repartition(topic string, opts ...RepartitionOpt) Stream {
 	return through
 }
 
-// markForRepartition marks the current stream for re-partitioning which will be used in state-full operations later
-//func (k *kStream) markForRepartition(opts ...RepartitionOpt) {
-//	k.repartitionOpts = &rePartitionConf{
-//		opts: opts,
-//	}
-//}
+func (k *kStream) topology() topology.SubTopologyBuilder {
+	return k.stpBuilder
+}
+
+func (k *kStream) setSubTopology(topology topology.SubTopologyBuilder) {
+	k.stpBuilder = topology
+}
+
+func (k *kStream) node() topology.NodeBuilder {
+	return k.rootNode
+}
+
+func (k *kStream) source() topology.Source {
+	return k.kSource
+}
 
 func (k *kStream) addNode(node topology.NodeBuilder) {
 	k.stpBuilder.AddNodeWithEdge(k.node(), node)

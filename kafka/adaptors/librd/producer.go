@@ -315,18 +315,6 @@ func (p *librdProducer) forceClose() error {
 		p.config.Logger.Error(err)
 	}
 
-	err := p.librdProducer.AbortTransaction(nil)
-	if err != nil {
-		if err.(librdKafka.Error).Code() == librdKafka.ErrState {
-			// No transaction in progress, ignore the error.
-			err = nil
-		} else {
-			return err
-		}
-	}
-
-	//p.librdProducer.Flush(10000) TODO fix this
-
 	p.librdProducer.Close()
 
 	return nil

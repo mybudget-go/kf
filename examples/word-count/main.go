@@ -24,8 +24,6 @@ func main() {
 
 	seed()
 
-	return
-
 	builder := streams.NewStreamBuilder(config)
 	buildTopology(builder)
 
@@ -87,7 +85,7 @@ func seed() {
 	for i := 0; i < 1; i++ {
 		record := producer.NewRecord(
 			context.Background(),
-			[]byte(`ss`),
+			[]byte(`test-key`),
 			[]byte(faker.Sentence()),
 			`mos.accounts`,
 			kafka.PartitionAny,

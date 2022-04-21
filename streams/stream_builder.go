@@ -246,7 +246,7 @@ func (b *StreamBuilder) NewRunner() Runner {
 	}
 }
 
-func (b *StreamBuilder) Describe() topology.Builder {
+func (b *StreamBuilder) Topology() topology.Builder {
 	return b.tpBuilder
 }
 

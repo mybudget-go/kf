@@ -14,9 +14,8 @@ type GlobalTableJoiner struct {
 	ValueMapper        JoinValueMapper
 	JoinType           JoinerType
 	RightKeyLookupFunc ValueLookupFunc
-	//OneToMany          bool
 
-	store topology.StateStore
+	store stores.ReadOnlyStore
 	topology.DefaultNode
 }
 
@@ -64,14 +63,18 @@ func (j *GlobalTableJoiner) Build(_ topology.SubTopologyContext) (topology.Node,
 		KeyMapper:          j.KeyMapper,
 		ValueMapper:        j.ValueMapper,
 		JoinType:           j.JoinType,
+		Store:              j.Store,
 		DefaultNode:        j.DefaultNode,
 		RightKeyLookupFunc: lookupFunc,
-		//OneToMany:          j.OneToMany,
 	}, nil
 }
 
 func (j *GlobalTableJoiner) Init(ctx topology.NodeContext) error {
-	j.store = ctx.Store(j.Store)
+	stor, err := ctx.StoreRegistry().Store(j.Store)
+	if err != nil {
+		return errors.Wrap(err, `GlobalTable Init failed`)
+	}
+	j.store = stor
 	return nil
 }
 

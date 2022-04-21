@@ -22,31 +22,11 @@ func ConsumeWithContextParamExtractors(fn ...SourceCtxParamExtractor) KSourceOpt
 	}
 }
 
-type AutoCreateOptions struct {
-	enabled       bool
-	partitionedAs topology.Source
-	replicas      int16
-}
-
-type TopicAutoCreateOption func(*AutoCreateOptions)
-
-func AutoTopicCreateReplicaCount(replicas int16) TopicAutoCreateOption {
-	return func(options *AutoCreateOptions) {
-		options.replicas = replicas
-	}
-}
-
-func AutoTopicCreatPartitionedAs(src topology.Source) TopicAutoCreateOption {
-	return func(options *AutoCreateOptions) {
-		options.partitionedAs = src
-	}
-}
-
-func ConsumeWithAutoTopicCreateEnabled(options ...TopicAutoCreateOption) KSourceOption {
+func ConsumeWithAutoTopicCreateEnabled(options ...TopicOpt) KSourceOption {
 	return func(source *KSource) {
-		source.autoCreateOptions.enabled = true
+		source.autoCreate.enabled = true
 		for _, opt := range options {
-			opt(source.autoCreateOptions)
+			opt(source.autoCreate.AutoTopicOpts)
 		}
 	}
 }
@@ -54,12 +34,6 @@ func ConsumeWithAutoTopicCreateEnabled(options ...TopicAutoCreateOption) KSource
 func ConsumeWithTopicNameFormatterFunc(fn TopicNameFormatter) KSourceOption {
 	return func(source *KSource) {
 		source.topicNameFormatter = fn
-	}
-}
-
-func ConsumeWithTaskOpts(opt ...tasks.TaskOpt) KSourceOption {
-	return func(source *KSource) {
-		source.taskOptions = append(source.taskOptions, opt...)
 	}
 }
 
@@ -87,18 +61,22 @@ type KSource struct {
 	offsetReset           kafka.Offset
 	coPartitionedWith     topology.Source
 	sourceCtxParamBinders []SourceCtxParamExtractor
-	autoCreateOptions     *AutoCreateOptions
-	taskOptions           []tasks.TaskOpt
-	internal              bool
-	topicNameFormatter    TopicNameFormatter
+	autoCreate            struct {
+		enabled bool
+		*AutoTopicOpts
+	}
+	taskOptions        []tasks.TaskOpt
+	internal           bool
+	topicNameFormatter TopicNameFormatter
 	topology.DefaultNode
 }
 
 func NewKSource(topic string, opts ...KSourceOption) topology.Source {
 	src := &KSource{
-		topic:             topic,
-		autoCreateOptions: new(AutoCreateOptions),
+		topic: topic,
 	}
+
+	src.autoCreate.AutoTopicOpts = new(AutoTopicOpts)
 
 	// apply options
 	for _, opt := range opts {
@@ -137,7 +115,7 @@ func (s *KSource) Build(ctx topology.SubTopologyContext) (topology.Node, error) 
 }
 
 func (s *KSource) Setup(ctx topology.SubTopologySetupContext) error {
-	if s.autoCreateOptions.enabled {
+	if s.autoCreate.enabled {
 		if s.topicNameFormatter != nil {
 			s.topic = s.topicNameFormatter(s.topic)(ctx, s.Id())
 		}
@@ -145,15 +123,16 @@ func (s *KSource) Setup(ctx topology.SubTopologySetupContext) error {
 		topic := &kafka.Topic{
 			Name:              s.topic,
 			NumPartitions:     ctx.MaxPartitionCount(),
-			ReplicationFactor: s.autoCreateOptions.replicas,
+			ReplicationFactor: s.autoCreate.AutoTopicOpts.replicaCount,
+			ConfigEntries:     s.autoCreate.AutoTopicOpts.configEntries,
 		}
 
 		// The topology only have auto create topics. looking for
 		// autoCreateOptions.partitionedAs to get the number of
 		// partitions form the parent
 		// TODO what if topology has more than one auto create topics
-		if ctx.MaxPartitionCount() < 1 && s.autoCreateOptions.partitionedAs != nil {
-			topic.NumPartitions = ctx.TopicMeta()[s.autoCreateOptions.partitionedAs.Topic()].NumPartitions
+		if ctx.MaxPartitionCount() < 1 && s.autoCreate.AutoTopicOpts.partitionAs != nil {
+			topic.NumPartitions = ctx.TopicMeta()[s.autoCreate.partitionAs.Topic()].NumPartitions
 		}
 
 		if err := ctx.Admin().StoreConfigs([]*kafka.Topic{topic}); err != nil {
@@ -177,8 +156,8 @@ func (s *KSource) Run(ctx context.Context, kIn, vIn interface{}) (kOut, vOut int
 
 	if s.sourceCtxParamBinders != nil {
 		for _, bind := range s.sourceCtxParamBinders {
-			k, v := bind(topology.RecordFromContext(ctx))
-			ctx = context.WithValue(ctx, k, v)
+			ctxK, ctxV := bind(topology.RecordFromContext(ctx))
+			ctx = context.WithValue(ctx, ctxK, ctxV)
 		}
 	}
 
@@ -203,15 +182,15 @@ func (s *KSource) CoPartitionedWith() topology.Source {
 }
 
 func (s *KSource) RePartitionedAs() topology.Source {
-	if s.autoCreateOptions.partitionedAs == nil {
+	if s.autoCreate.partitionAs == nil {
 		return nil
 	}
 
-	if s.autoCreateOptions.partitionedAs.AutoCreate() {
-		return s.getExistingParent(s.autoCreateOptions.partitionedAs)
+	if s.autoCreate.partitionAs.AutoCreate() {
+		return s.getExistingParent(s.autoCreate.partitionAs)
 	}
 
-	return s.autoCreateOptions.partitionedAs
+	return s.autoCreate.partitionAs
 }
 
 func (s *KSource) getExistingParent(src topology.Source) topology.Source {
@@ -223,9 +202,9 @@ func (s *KSource) getExistingParent(src topology.Source) topology.Source {
 }
 
 func (s *KSource) AutoCreate() bool {
-	return s.autoCreateOptions.enabled
+	return s.autoCreate.enabled
 }
 
 func (s *KSource) Internal() bool {
-	return s.autoCreateOptions.enabled
+	return s.autoCreate.enabled
 }

@@ -30,31 +30,42 @@ func ProduceWithHeadersExtractor(h HeaderExtractor) KSinkOption {
 	}
 }
 
+func ProduceWithAutoTopicCreateEnabled(options ...TopicOpt) KSinkOption {
+	return func(sink *kSinkBuilder) {
+		sink.autoCreate.enabled = true
+		sink.autoCreate.partitionCount = 1
+		sink.autoCreate.replicaCount = 1
+		for _, opt := range options {
+			opt(sink.autoCreate.AutoTopicOpts)
+		}
+	}
+}
+
 func ProduceWithTombstoneFilter(f Tombstoner) KSinkOption {
 	return func(sink *kSinkBuilder) {
 		sink.tombstoneFiler = f
 	}
 }
 
-func ProducerWithTopicNameFormatter(formatter TopicNameFormatter) KSinkOption {
+func ProduceWithTopicNameFormatter(formatter TopicNameFormatter) KSinkOption {
 	return func(sink *kSinkBuilder) {
 		sink.topicNameFormatter = formatter
 	}
 }
 
-func ProducerWithKeyEncoder(encoder encoding.Encoder) KSinkOption {
+func ProduceWithKeyEncoder(encoder encoding.Encoder) KSinkOption {
 	return func(sink *kSinkBuilder) {
 		sink.encoder.Key = encoder
 	}
 }
 
-func ProducerWithValEncoder(encoder encoding.Encoder) KSinkOption {
+func ProduceWithValEncoder(encoder encoding.Encoder) KSinkOption {
 	return func(sink *kSinkBuilder) {
 		sink.encoder.Value = encoder
 	}
 }
 
-func ProducerWithLogger(logger log.Logger) KSinkOption {
+func ProduceWithLogger(logger log.Logger) KSinkOption {
 	return func(sink *kSinkBuilder) {
 		sink.logger = logger
 	}
@@ -68,6 +79,12 @@ type kSinkBuilder struct {
 		name          string
 		numPartitions int32
 	}
+
+	autoCreate struct {
+		enabled bool
+		*AutoTopicOpts
+	}
+
 	partitioner Partitioner
 
 	logger log.Logger
@@ -91,6 +108,8 @@ func NewKSinkBuilder(topic string, options ...KSinkOption) topology.NodeBuilder 
 			return topology.RecordFromContext(ctx).Headers()
 		},
 	}
+
+	sink.autoCreate.AutoTopicOpts = new(AutoTopicOpts)
 
 	sink.topic.name = topic
 
@@ -122,6 +141,27 @@ func (s *kSinkBuilder) Setup(ctx topology.SubTopologySetupContext) error {
 		s.topic.name = s.topicNameFormatter(s.topic.name)(ctx, s.Id())
 	}
 
+	if s.autoCreate.enabled {
+		topic := &kafka.Topic{
+			Name:              s.topic.name,
+			NumPartitions:     s.autoCreate.partitionCount,
+			ReplicationFactor: s.autoCreate.replicaCount,
+			ConfigEntries:     s.autoCreate.configEntries,
+		}
+
+		// The topology only have auto create topics. looking for
+		// autoCreateOptions.partitionedAs to get the number of
+		// partitions form the parent
+		// TODO what if topology has more than one auto create topics
+		if ctx.MaxPartitionCount() < 1 && s.autoCreate.AutoTopicOpts.partitionAs != nil {
+			topic.NumPartitions = ctx.TopicMeta()[s.autoCreate.partitionAs.Topic()].NumPartitions
+		}
+
+		if err := ctx.Admin().StoreConfigs([]*kafka.Topic{topic}); err != nil {
+			return s.WrapErr(err)
+		}
+	}
+
 	return nil
 }
 
@@ -140,6 +180,30 @@ func (s *kSinkBuilder) Build(ctx topology.SubTopologyContext) (topology.Node, er
 	sink.topic.numOfPartitions = ctx.TopicMeta()[s.topic.name].NumPartitions
 
 	return sink, nil
+}
+
+func (s *kSinkBuilder) RePartitionedAs() topology.Source {
+	if s.autoCreate.partitionAs == nil {
+		return nil
+	}
+
+	if s.autoCreate.partitionAs.AutoCreate() {
+		return s.getExistingParent(s.autoCreate.partitionAs)
+	}
+
+	return s.autoCreate.partitionAs
+}
+
+func (s *kSinkBuilder) getExistingParent(src topology.Source) topology.Source {
+	if src != nil && src.AutoCreate() {
+		return s.getExistingParent(src.RePartitionedAs())
+	}
+
+	return src
+}
+
+func (s *kSinkBuilder) AutoCreate() bool {
+	return s.autoCreate.enabled
 }
 
 func (s *kSinkBuilder) AddEdge(node topology.Node) {

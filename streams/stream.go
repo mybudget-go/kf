@@ -12,6 +12,7 @@ type StreamTopology interface {
 	setSubTopology(topology topology.SubTopologyBuilder)
 	node() topology.NodeBuilder
 	source() topology.Source
+	merge(stream StreamTopology)
 }
 
 type GlobalTable interface {
