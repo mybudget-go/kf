@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"github.com/bxcodec/faker/v3"
 	"github.com/gmbyapa/kstream/kafka"
@@ -15,9 +16,16 @@ import (
 	"time"
 )
 
+var bootstrapServers = flag.String(`bootstrap-servers`, `localhost:9092`,
+	`A comma seperated list Kafka Bootstrap Servers`)
+
+const TopicTextLines = `textlines`
+
 func main() {
+	flag.Parse()
+
 	config := streams.NewStreamBuilderConfig()
-	config.BootstrapServers = []string{`192.168.0.101:9092`}
+	config.BootstrapServers = strings.Split(*bootstrapServers, `,`)
 	config.ApplicationId = `word-count`
 	config.Consumer.Offsets.Initial = kafka.Earliest
 	config.Logger = log.Constructor.Log()
@@ -52,7 +60,7 @@ func main() {
 }
 
 func buildTopology(builder *streams.StreamBuilder) {
-	stream := builder.KStream(`textlines`, encoding.StringEncoder{}, encoding.StringEncoder{})
+	stream := builder.KStream(TopicTextLines, encoding.StringEncoder{}, encoding.StringEncoder{})
 	stream.Each(func(ctx context.Context, key, value interface{}) {
 		println(`Word count for : ` + value.(string))
 	}).FlatMapValues(func(ctx context.Context, key, value interface{}) (values []interface{}, err error) {
@@ -76,23 +84,24 @@ func buildTopology(builder *streams.StreamBuilder) {
 
 func seed() {
 	conf := librd.NewProducerConfig()
-	conf.BootstrapServers = []string{`192.168.0.101:9092`}
+	conf.BootstrapServers = strings.Split(*bootstrapServers, `,`)
 	producer, err := librd.NewProducer(conf)
 	if err != nil {
 		panic(err)
 	}
 
-	for i := 0; i < 1; i++ {
+	for i := 0; i < 2; i++ {
 		record := producer.NewRecord(
 			context.Background(),
 			[]byte(`test-key`),
 			[]byte(faker.Sentence()),
-			`mos.accounts`,
+			TopicTextLines,
 			kafka.PartitionAny,
 			time.Now(),
 			nil,
 			``,
 		)
+
 		p, o, err := producer.ProduceSync(context.Background(), record)
 		if err != nil {
 			panic(err)
