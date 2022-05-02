@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-var bootstrapServers = flag.String(`bootstrap-servers`, `192.168.0.101:9092`,
+var bootstrapServers = flag.String(`bootstrap-servers`, `localhost:9092`,
 	`A comma seperated list Kafka Bootstrap Servers`)
 
 const TopicTextLines = `textlines`
