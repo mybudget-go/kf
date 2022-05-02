@@ -58,7 +58,7 @@ func RePartitionWithPartitioner(partitioner Partitioner) RepartitionOpt {
 	}
 }
 
-func rePartitionedFromSource(node topology.NodeBuilder, source topology.Source) RepartitionOpt {
+func rePartitionedDueTo(node topology.NodeBuilder, source topology.Source) RepartitionOpt {
 	return func(rpOpts *RepartitionOpts) {
 		rpOpts.dueTo.node = node
 		rpOpts.dueTo.source = source

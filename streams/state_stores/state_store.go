@@ -10,13 +10,13 @@ import (
 	"github.com/gmbyapa/kstream/streams/topology"
 )
 
-type stateStore struct {
+type StateStore struct {
 	stores.Store
 	topology.ChangelogSyncer
 	cache *Cache
 }
 
-func (str *stateStore) Set(_ context.Context, key, value interface{}, _ time.Duration) error {
+func (str *StateStore) Set(_ context.Context, key, value interface{}, _ time.Duration) error {
 	keyByt, err := str.KeyEncoder().Encode(key)
 	if err != nil {
 		return errors.Wrap(err, fmt.Sprintf(`store [%s] key encode error`, str))
@@ -28,10 +28,11 @@ func (str *stateStore) Set(_ context.Context, key, value interface{}, _ time.Dur
 	}
 
 	str.cache.Write(keyByt, valByt)
+
 	return nil
 }
 
-func (str *stateStore) Get(ctx context.Context, key interface{}) (interface{}, error) {
+func (str *StateStore) Get(ctx context.Context, key interface{}) (interface{}, error) {
 	keyByt, err := str.KeyEncoder().Encode(key)
 	if err != nil {
 		return nil, errors.Wrap(err, fmt.Sprintf(`store [%s] key encode error`, str))
@@ -49,21 +50,22 @@ func (str *stateStore) Get(ctx context.Context, key interface{}) (interface{}, e
 	return str.Store.Get(ctx, key)
 }
 
-func (str *stateStore) Delete(_ context.Context, key interface{}) error {
+func (str *StateStore) Delete(_ context.Context, key interface{}) error {
 	keyByt, err := str.KeyEncoder().Encode(key)
 	if err != nil {
 		return errors.Wrap(err, fmt.Sprintf(`store [%s] key encode error`, str))
 	}
+
 	str.cache.Delete(keyByt)
 
 	return nil
 }
 
-func (str *stateStore) Flush() error {
+func (str *StateStore) Flush() error {
 	for keyByt, valByt := range str.cache.records {
 		if valByt == nil {
 			if err := str.Store.Backend().Delete([]byte(keyByt)); err != nil {
-				return err // TODO handle error
+				return errors.Wrapf(err, `backend store flush error. store:%s`, str)
 			}
 			continue
 		}
@@ -73,11 +75,12 @@ func (str *stateStore) Flush() error {
 		}
 	}
 
+	// Purge store cache
 	str.Purge()
 
 	return nil
 }
 
-func (str *stateStore) Purge() {
+func (str *StateStore) Purge() {
 	str.cache.Purge()
 }

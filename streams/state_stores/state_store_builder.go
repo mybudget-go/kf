@@ -140,7 +140,7 @@ func (d *stateStoreBuilder) Build(ctx topology.SubTopologyContext) (topology.Sta
 		return nil, errors.Wrap(err, `changelogSyncer initiate failed`)
 	}
 
-	stor := &stateStore{
+	stor := &StateStore{
 		Store:           store,
 		ChangelogSyncer: syncer,
 		cache:           newCache(),
@@ -156,7 +156,7 @@ func (d *stateStoreBuilder) Build(ctx topology.SubTopologyContext) (topology.Sta
 	}
 
 	return &loggableStateStoreInstance{
-		stateStore:   stor,
+		StateStore:   stor,
 		ChangeLogger: logger,
 	}, nil
 }

@@ -8,9 +8,16 @@
 package memory
 
 type Iterator struct {
-	records    []memoryRecord
+	records    []ByteRecord
 	currentKey int
 	valid      bool
+}
+
+func NewMemoryIterator(records []ByteRecord) *Iterator {
+	return &Iterator{
+		records: records,
+		valid:   len(records) > 0,
+	}
 }
 
 func (i *Iterator) SeekToFirst() {
@@ -23,7 +30,7 @@ func (i *Iterator) SeekToLast() {
 
 func (i *Iterator) Seek(key []byte) {
 	for idx, r := range i.records {
-		if string(r.key) == string(key) {
+		if string(r.Key) == string(key) {
 			i.currentKey = idx
 		}
 	}
@@ -50,11 +57,11 @@ func (i *Iterator) Close() {
 }
 
 func (i *Iterator) Key() []byte {
-	return i.records[i.currentKey].key
+	return i.records[i.currentKey].Key
 }
 
 func (i *Iterator) Value() []byte {
-	return i.records[i.currentKey].value
+	return i.records[i.currentKey].Value
 }
 
 func (i *Iterator) Valid() bool {

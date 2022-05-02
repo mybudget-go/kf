@@ -30,14 +30,19 @@ func ProduceWithHeadersExtractor(h HeaderExtractor) KSinkOption {
 	}
 }
 
-func ProduceWithAutoTopicCreateEnabled(options ...TopicOpt) KSinkOption {
+func ProduceWithAutoTopicCreateOptions(options ...TopicOpt) KSinkOption {
 	return func(sink *kSinkBuilder) {
-		sink.autoCreate.enabled = true
 		sink.autoCreate.partitionCount = 1
 		sink.autoCreate.replicaCount = 1
 		for _, opt := range options {
 			opt(sink.autoCreate.AutoTopicOpts)
 		}
+	}
+}
+
+func ProduceWithAutoTopicCreateEnabled() KSinkOption {
+	return func(sink *kSinkBuilder) {
+		sink.autoCreate.enabled = true
 	}
 }
 

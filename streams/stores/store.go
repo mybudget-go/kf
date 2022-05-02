@@ -17,8 +17,6 @@ type Builder func(name string, keyEncoder, valEncoder encoding.Encoder, options 
 
 type IndexedStoreBuilder func(name string, keyEncoder, valEncoder encoding.Encoder, indexes []Index, options ...Option) (IndexedStore, error)
 
-//type StoreBuilder func(name string, keyEncoder, valEncoder serdes.Encoder, options ...Option) StateStore
-
 type Store interface {
 	Backend() backend.Backend
 	Set(ctx context.Context, key, value interface{}, expiry time.Duration) error
@@ -73,12 +71,6 @@ func NewStore(name string, keyEncoder encoding.Encoder, valEncoder encoding.Enco
 		opts:       opts,
 	}
 
-	//store.opts.backend.SetExpiry(opts.expiry)
-
-	//if opts.changelog != nil {
-	//	return newLoggableStore(store, opts.changelog)
-	//}
-
 	return store, nil
 }
 
@@ -118,13 +110,6 @@ func (s *store) Set(ctx context.Context, key interface{}, value interface{}, exp
 	if err != nil {
 		return errors.Wrap(err, fmt.Sprintf(`store [%s] value encode err `, s.name))
 	}
-
-	////if changelog enable write record to the changelog
-	//if s.opts.changelog.enabled {
-	//	if err := s.opts.changelog.log.Log(ctx, k, v); err != nil {
-	//		return errors.Wrap(err, `changelog write failed`)
-	//	}
-	//}
 
 	return s.opts.backend.Set(k, v, expiry)
 }

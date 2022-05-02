@@ -77,6 +77,9 @@ type Config struct {
 	// (default ApplicationId-${storeName}-repartitioned)
 	RepartitionTopicNameFormatter TopicNameFormatter
 
+	// DefaultPartitioner if defined will be used in Sink operators. Eg: To, Repartition
+	DefaultPartitioner Partitioner
+
 	// ChangelogTopicNameFormatter changelog topic name formatter function
 	// (default ApplicationId-${storeName}-store-changelog)
 	ChangelogTopicNameFormatter state_stores.ChangelogTopicFormatter

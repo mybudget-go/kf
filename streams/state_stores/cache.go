@@ -22,10 +22,12 @@ func (c *Cache) Has(key []byte) bool {
 	return ok
 }
 
+// Delete will make the underline record null
 func (c *Cache) Delete(key []byte) {
 	c.records[string(key)] = nil
 }
 
+// Purge discards all records in cache and make it empty
 func (c *Cache) Purge() {
 	c.records = map[string][]byte{}
 }

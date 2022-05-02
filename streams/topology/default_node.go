@@ -45,6 +45,12 @@ func (n *DefaultNode) WrapErrWith(err error, message string) error {
 	return errors.WrapWithFrameSkip(err, fmt.Sprintf(`%s at [%s.%s(%s)]`, message, n.id.SubTopologyId(), n.id, n.NodeName()), 3)
 }
 
+func (n *DefaultNode) IgnoreAndWrapErrWith(err error, message string) (interface{}, interface{}, bool, error) {
+	return nil, nil, false,
+		errors.WrapWithFrameSkip(err, fmt.Sprintf(
+			`%s at [%s.%s(%s)]`, message, n.id.SubTopologyId(), n.id, n.NodeName()), 3)
+}
+
 func (n *DefaultNode) Forward(ctx context.Context, kIn, vIn interface{}, cont bool) (interface{}, interface{}, bool, error) {
 	for _, child := range n.Edges() {
 		_, _, _, err := child.Run(ctx, kIn, vIn)
@@ -85,4 +91,12 @@ func (n *DefaultNode) NameAs(name string) { n.name = name }
 
 func (n *DefaultNode) NodeName() string {
 	return n.name
+}
+
+func (n *DefaultNode) String() string {
+	if n.name != `` {
+		return n.name
+	}
+
+	return fmt.Sprintf(`%s-%s`, n.Id().SubTopologyId(), n.Id())
 }

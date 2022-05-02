@@ -15,9 +15,9 @@ import (
 	"time"
 )
 
-type memoryRecord struct {
-	key       []byte
-	value     []byte
+type ByteRecord struct {
+	Key       []byte
+	Value     []byte
 	createdAt time.Time
 	expiry    time.Duration
 }
@@ -97,7 +97,7 @@ func (m *memory) runCleaner() {
 			age := time.Since(record.createdAt).Nanoseconds()
 			if (record.expiry > 0 && age > record.expiry.Nanoseconds()) ||
 				m.globalRecordExpiry > 0 && age > m.globalRecordExpiry.Nanoseconds() {
-				if err := m.Delete(record.key); err != nil {
+				if err := m.Delete(record.Key); err != nil {
 					m.logger.Error(err)
 				}
 			}
@@ -105,11 +105,11 @@ func (m *memory) runCleaner() {
 	}
 }
 
-func (m *memory) snapshot() []memoryRecord {
-	records := make([]memoryRecord, 0)
+func (m *memory) snapshot() []ByteRecord {
+	records := make([]ByteRecord, 0)
 
 	m.records.Range(func(key, value interface{}) bool {
-		records = append(records, value.(memoryRecord))
+		records = append(records, value.(ByteRecord))
 		return true
 	})
 
@@ -133,9 +133,9 @@ func (m *memory) Set(key []byte, value []byte, expiry time.Duration) error {
 		m.metrics.updateLatency.Observe(float64(time.Since(begin).Nanoseconds()/1e3), map[string]string{`name`: m.Name(), `type`: `memory`})
 	}(time.Now())
 
-	record := memoryRecord{
-		key:       key,
-		value:     value,
+	record := ByteRecord{
+		Key:       key,
+		Value:     value,
 		expiry:    expiry,
 		createdAt: time.Now(),
 	}
@@ -155,7 +155,7 @@ func (m *memory) Get(key []byte) ([]byte, error) {
 		return nil, nil
 	}
 
-	return record.(memoryRecord).value, nil
+	return record.(ByteRecord).Value, nil
 }
 
 func (m *memory) RangeIterator(fromKy []byte, toKey []byte) backend.Iterator {
@@ -163,15 +163,10 @@ func (m *memory) RangeIterator(fromKy []byte, toKey []byte) backend.Iterator {
 }
 
 func (m *memory) Iterator() backend.Iterator {
-	records := m.snapshot()
-	return &Iterator{
-		records: records,
-		valid:   len(records) > 0,
-	}
+	return NewMemoryIterator(m.snapshot())
 }
 
 func (m *memory) Delete(key []byte) error {
-
 	defer func(begin time.Time) {
 		m.metrics.deleteLatency.Observe(float64(time.Since(begin).Nanoseconds()/1e3), map[string]string{`name`: m.Name(), `type`: `memory`})
 	}(time.Now())

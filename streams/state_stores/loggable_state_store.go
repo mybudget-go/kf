@@ -10,7 +10,7 @@ import (
 )
 
 type loggableStateStoreInstance struct {
-	*stateStore
+	*StateStore
 	topology.ChangeLogger
 }
 

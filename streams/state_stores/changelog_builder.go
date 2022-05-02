@@ -135,7 +135,7 @@ func (b *changelogBuilder) Build(ctx topology.SubTopologyContext, store stores.S
 
 func (b *changelogBuilder) BuildLogger(ctx topology.SubTopologyContext, store string) (topology.ChangeLogger, error) {
 	return NewChangeLogger(ctx.Producer(), kafka.TopicPartition{
-		Topic:     b.topic.NameFormatter(store)(ctx),
+		Topic:     b.topic.Name,
 		Partition: ctx.Partition(),
 	}), nil
 }

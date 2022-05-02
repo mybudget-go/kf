@@ -7,7 +7,6 @@ import (
 	"github.com/gmbyapa/kstream/streams/state_stores"
 	"github.com/gmbyapa/kstream/streams/stores"
 	"github.com/gmbyapa/kstream/streams/topology"
-	"time"
 )
 
 type TopicNameFormatter func(topic string) func(ctx topology.BuilderContext, nodeId topology.NodeId) string
@@ -181,7 +180,7 @@ func (k *kStream) Map(transformer processors.MapperFunc, opts ...StreamOption) S
 	}
 
 	return k.newChildStream(node).maybeRepartitioned(
-		RePartitionAs(fmt.Sprintf(`%s-%s`, k.kSource.Topic(), node.NodeName())),
+		//RePartitionAs(fmt.Sprintf(`%s-%s`, k.kSource.Topic(), node.NodeName())),
 		rePartitionedWithSourceOpts(
 			ConsumeWithAutoTopicCreateEnabled(
 				PartitionAs(k.kSource))))
@@ -224,7 +223,7 @@ func (k *kStream) SelectKey(selectKeyFunc processors.SelectKeyFunc, opts ...Stre
 	}
 
 	return k.newChildStream(node).maybeRepartitioned(
-		RePartitionAs(fmt.Sprintf(`%s-%s`, k.kSource.Topic(), node.NodeName())),
+		//RePartitionAs(fmt.Sprintf(`%s-%s`, k.kSource.Topic(), node.NodeName())),
 		rePartitionedWithSourceOpts(
 			ConsumeWithAutoTopicCreateEnabled(
 				PartitionAs(k.kSource))))
@@ -239,7 +238,8 @@ func (k *kStream) FlatMap(flatMapFunc processors.FlatMapFunc, opts ...StreamOpti
 	k.stpBuilder.AddNodeWithEdge(k.rootNode, node)
 
 	return k.newChildStream(node).maybeRepartitioned(
-		RePartitionAs(fmt.Sprintf(`%s-%s`, k.kSource.Topic(), node.NodeName())),
+		//RePartitionAs(fmt.Sprintf(`%s-%s`, k.kSource.Topic(), node.NodeName())),
+		rePartitionedDueTo(node, k.source()),
 		rePartitionedWithSourceOpts(
 			ConsumeWithAutoTopicCreateEnabled(
 				PartitionAs(k.kSource))))
@@ -384,18 +384,6 @@ func (k *kStream) LeftJoinGlobalTable(table GlobalTable, keyMapper processors.Ke
 	return k.newChildStream(joiner)
 }
 
-type JoinWindow struct {
-	store    string
-	duration time.Duration
-}
-
-func NewJoinWindow(store string, duration time.Duration) JoinWindow {
-	return JoinWindow{
-		store:    store,
-		duration: duration,
-	}
-}
-
 func (k *kStream) JoinTable(table Table, valMapper processors.JoinValueMapper, opts ...JoinOption) Stream {
 	typ := processors.InnerJoin
 	if k.repartitionOpts != nil {
@@ -532,9 +520,15 @@ func (k *kStream) Merge(stream Stream) Stream {
 func (k *kStream) To(topic string, options ...KSinkOption) {
 	opts := []KSinkOption{
 		ProduceWithLogger(k.builder.config.Logger),
+		ProduceWithAutoTopicCreateOptions(WithReplicaCount(k.builder.config.InternalTopicsDefaultReplicaCount)),
 		ProduceWithKeyEncoder(k.keyEncoder()),
 		ProduceWithValEncoder(k.valEncoder()),
 	}
+
+	if k.builder.config.DefaultPartitioner != nil {
+		opts = append(opts, ProduceWithPartitioner(k.builder.config.DefaultPartitioner))
+	}
+
 	sink := NewKSinkBuilder(topic, append(opts, options...)...)
 
 	k.stpBuilder.AddNodeWithEdge(k.rootNode, sink)
@@ -568,6 +562,14 @@ func (k *kStream) Repartition(topic string, opts ...RepartitionOpt) Stream {
 
 	rpOpts.apply(opts...)
 
+	if rpOpts.topicName == `` {
+		panic(fmt.Sprintf(`Stream (%s) should repartition due to %s(%s)`,
+			k.node(),
+			rpOpts.dueTo.node.Type().Name,
+			rpOpts.dueTo.node,
+		))
+	}
+
 	// Source options overrides
 	srcOpts := append([]KSourceOption{
 		ConsumeWithTopicNameFormatterFunc(rpOpts.topicNameFormatter),
@@ -577,10 +579,6 @@ func (k *kStream) Repartition(topic string, opts ...RepartitionOpt) Stream {
 	// Sink options overrides
 	sinkOpts := append([]KSinkOption{
 		ProduceWithTopicNameFormatter(rpOpts.topicNameFormatter),
-		// Copy source message headers to repartition topic
-		//ProduceWithHeadersExtractor(func(ctx context.Context, key, val interface{}) kafka.RecordHeaders {
-		//	return topology.RecordFromContext(ctx).Headers()
-		//}),
 	}, rpOpts.sinkOpts...)
 
 	through := k.Through(rpOpts.topicName,
