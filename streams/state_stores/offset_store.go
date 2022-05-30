@@ -27,16 +27,16 @@ func (str *offsetStore) Commit(ctx context.Context, tp kafka.TopicPartition, off
 
 func (str *offsetStore) Committed(tp kafka.TopicPartition) (kafka.Offset, error) {
 	if !str.Store.Backend().Persistent() {
-		return kafka.Earliest, nil
+		return kafka.OffsetEarliest, nil
 	}
 
 	v, err := str.Get(context.Background(), tp.String())
 	if err != nil {
-		return kafka.Unknown, errors.Wrap(err, `committed offset fetch failed`)
+		return kafka.OffsetUnknown, errors.Wrap(err, `committed offset fetch failed`)
 	}
 
 	if v == nil {
-		return kafka.Earliest, nil
+		return kafka.OffsetEarliest, nil
 	}
 
 	return kafka.Offset(v.(int)), err

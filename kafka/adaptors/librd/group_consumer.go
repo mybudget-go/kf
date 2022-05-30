@@ -8,7 +8,6 @@ import (
 	"github.com/gmbyapa/kstream/pkg/errors"
 	"github.com/tryfix/log"
 	"github.com/tryfix/metrics"
-	"strings"
 	"sync"
 	"time"
 )
@@ -48,77 +47,20 @@ func NewGroupConsumerProvider(config *GroupConsumerConfig) kafka.GroupConsumerPr
 
 func (c *groupConsumerProvider) NewBuilder(conf *kafka.GroupConsumerConfig) kafka.GroupConsumerBuilder {
 	c.config.GroupConsumerConfig = conf
-	if err := c.config.Librd.SetKey(`client.id`, c.config.Id); err != nil {
-		panic(err.Error())
-	}
-
-	var offset string
-	switch c.config.GroupConsumerConfig.Offsets.Initial {
-	case kafka.Latest:
-		offset = `latest`
-	case kafka.Earliest:
-		offset = `earliest`
-	}
-
-	if err := c.config.Librd.SetKey(`auto.offset.reset`, offset); err != nil {
-		panic(err)
-	}
-
-	if c.config.EOSEnabled {
-		c.config.IsolationLevel = kafka.ReadCommitted
-		if err := c.config.Librd.SetKey(`enable.auto.commit`, false); err != nil {
-			panic(err.Error())
-		}
-
-		if err := c.config.Librd.SetKey(`enable.auto.offset.store`, false); err != nil {
-			panic(err.Error())
-		}
-	}
 
 	return func(configure func(*kafka.GroupConsumerConfig)) (kafka.GroupConsumer, error) {
 		defaultConfCopy := c.config.copy()
 		configure(defaultConfCopy.GroupConsumerConfig)
-
-		if err := defaultConfCopy.Librd.SetKey(`bootstrap.servers`, strings.Join(defaultConfCopy.BootstrapServers, `,`)); err != nil {
-			return nil, errors.New(err.Error())
-		}
-
-		if err := defaultConfCopy.Librd.SetKey(`go.application.rebalance.enable`, false); err != nil {
-			return nil, errors.New(err.Error())
-		}
-
-		if err := defaultConfCopy.Librd.SetKey(`go.events.channel.enable`, false); err != nil {
-			return nil, errors.New(err.Error())
-		}
-
-		if err := defaultConfCopy.Librd.SetKey(`go.logs.channel.enable`, true); err != nil {
-			return nil, errors.New(err.Error())
-		}
-
-		if err := defaultConfCopy.Librd.SetKey(`partition.assignment.strategy`, `range`); err != nil {
-			return nil, errors.New(err.Error())
-		}
-
-		if err := defaultConfCopy.Librd.SetKey(`group.id`, defaultConfCopy.GroupId); err != nil {
-			return nil, errors.New(err.Error())
-		}
-
-		switch defaultConfCopy.IsolationLevel {
-		case kafka.ReadCommitted:
-			if err := defaultConfCopy.Librd.SetKey(`isolation.level`, `read_committed`); err != nil {
-				return nil, errors.New(err.Error())
-			}
-		case kafka.ReadUncommitted:
-			if err := defaultConfCopy.Librd.SetKey(`isolation.level`, `read_uncommitted`); err != nil {
-				return nil, errors.New(err.Error())
-			}
-		}
 
 		return NewGroupConsumer(defaultConfCopy)
 	}
 }
 
 func NewGroupConsumer(config *GroupConsumerConfig) (kafka.GroupConsumer, error) {
+	if err := config.setUp(); err != nil {
+		return nil, errors.Wrap(err, `group consumer config setup failed`)
+	}
+
 	con, err := librdKafka.NewConsumer(config.Librd)
 	if err != nil {
 		return nil, errors.Wrap(err, `new consumer failed`)
@@ -285,15 +227,14 @@ func (g *groupConsumer) rebalance(c *librdKafka.Consumer, event librdKafka.Event
 func (g *groupConsumer) assign(c *librdKafka.Consumer, partitions []librdKafka.TopicPartition) error {
 	g.metrics.status.Count(2, nil)
 
-	assign := NewAssignment(partitions)
+	assign := newAssignment(partitions)
+	g.config.Logger.Warn(fmt.Sprintf(`Partitions %s assigning...`, assign.TPs()))
 
 	session := &groupSession{
-		assignment:       assign.claims(),
+		assignment:       assign,
 		consumer:         c,
 		metaFetchTimeout: int(g.config.TopicMetaFetchTimeout.Milliseconds()),
 	}
-
-	g.config.Logger.Warn(fmt.Sprintf(`Partitions %s assigning...`, assign.claims()))
 
 	if err := g.groupHandler.OnPartitionAssigned(context.Background(), session); err != nil {
 		g.config.Logger.Error(
@@ -303,8 +244,8 @@ func (g *groupConsumer) assign(c *librdKafka.Consumer, partitions []librdKafka.T
 		return err
 	}
 
-	for _, tp := range session.Assignment() {
-		messageChan := make(chan kafka.Record, 10) // TODO make this configurable
+	for _, tp := range session.Assignment().TPs() {
+		messageChan := make(chan kafka.Record, 10) //TODO make this configurable
 
 		g.mu.Lock()
 		g.assignment[tp.String()] = messageChan
@@ -323,10 +264,15 @@ func (g *groupConsumer) assign(c *librdKafka.Consumer, partitions []librdKafka.T
 			}
 		}(tp)
 	}
-	g.config.Logger.Info(fmt.Sprintf(
-		`SubscribeTopics Assignment %+v`, assign.claims()))
 
-	err := c.Assign(assign.toLibrd())
+	librdAssign, err := assign.toLibrd()
+	if err != nil {
+		g.config.Logger.Error(err.Error())
+		g.startShutdownOnErr(err)
+		return errors.Wrap(err, `assignment generate failed`)
+	}
+
+	err = c.Assign(librdAssign)
 	if err != nil {
 		g.config.Logger.Error(fmt.Sprintf(
 			`SubscribeTopics Assign failed due to %s, Consumer will shut down`, err))
@@ -334,12 +280,14 @@ func (g *groupConsumer) assign(c *librdKafka.Consumer, partitions []librdKafka.T
 		return err
 	}
 
+	g.config.Logger.Info(fmt.Sprintf(`Partitions %s assigned`, assign.TPs()))
+
 	return nil
 }
 
 func (g *groupConsumer) revoke(c *librdKafka.Consumer, partitions []librdKafka.TopicPartition) error {
 	g.metrics.status.Count(3, nil)
-	assign := NewAssignment(partitions)
+	assign := newAssignment(partitions)
 
 	var pts []kafka.TopicPartition
 	for _, pt := range partitions {
@@ -349,13 +297,13 @@ func (g *groupConsumer) revoke(c *librdKafka.Consumer, partitions []librdKafka.T
 		})
 	}
 
-	g.config.Logger.Warn(fmt.Sprintf(`Partitions %s revoking`, assign.claims()))
+	g.config.Logger.Warn(fmt.Sprintf(`Partitions %s revoking`, assign.TPs()))
 	if err := g.groupHandler.OnPartitionRevoked(context.Background(), &groupSession{
-		assignment: assign.claims(),
+		assignment: assign,
 		consumer:   c,
 	}); err != nil {
 		g.config.Logger.Error(fmt.Sprintf(
-			`ConsumerGroupHandler OnPartitionRevoked failed due to %s, Consumer will shut down`, err))
+			`ReBalanceHandler.OnPartitionRevoked failed due to %s, Consumer will shut down`, err))
 		g.startShutdownOnErr(err)
 		return err
 	}
@@ -363,7 +311,7 @@ func (g *groupConsumer) revoke(c *librdKafka.Consumer, partitions []librdKafka.T
 	err := c.Unassign()
 	if err != nil {
 		g.config.Logger.Error(fmt.Sprintf(
-			`ConsumerGroupHandler Unassign failed due to %s, Consumer will shut down`, err))
+			`Unassign failed due to %s, Consumer will shut down`, err))
 		g.startShutdownOnErr(err)
 	}
 
@@ -374,7 +322,7 @@ func (g *groupConsumer) revoke(c *librdKafka.Consumer, partitions []librdKafka.T
 		g.mu.Unlock()
 	}
 
-	g.config.Logger.Info(fmt.Sprintf(`Partitions %s revoked`, assign.claims()))
+	g.config.Logger.Info(fmt.Sprintf(`Partitions %s revoked`, assign.TPs()))
 
 	return nil
 }
@@ -394,7 +342,7 @@ func (g *groupConsumer) startShutdownOnErr(err error) {
 }
 
 func (g *groupConsumer) printLogs() {
-	logger := g.config.Logger.NewLog(log.Prefixed(`Librdkafka`))
+	logger := g.config.Logger.NewLog(log.Prefixed(`LibrdKafka`))
 	for lg := range g.consumer.Logs() {
 		switch lg.Level {
 		case 0, 1, 2:

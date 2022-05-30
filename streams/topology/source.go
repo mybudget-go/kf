@@ -1,6 +1,7 @@
 package topology
 
 import (
+	"github.com/gmbyapa/kstream/kafka"
 	"github.com/gmbyapa/kstream/streams/encoding"
 )
 
@@ -18,4 +19,5 @@ type Source interface {
 	RePartitionedAs() Source
 	AutoCreate() bool
 	Internal() bool
+	InitialOffset() kafka.Offset
 }

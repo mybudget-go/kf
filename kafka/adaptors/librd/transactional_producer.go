@@ -13,6 +13,7 @@ import (
 	librdKafka "github.com/confluentinc/confluent-kafka-go/kafka"
 	"github.com/gmbyapa/kstream/kafka"
 	"github.com/gmbyapa/kstream/pkg/errors"
+	"time"
 )
 
 type Err struct {
@@ -29,6 +30,10 @@ type librdTxProducer struct {
 }
 
 func (p *librdTxProducer) InitTransactions(ctx context.Context) error {
+	defer func(begin time.Time) {
+		p.metrics.transactions.initLatency.Observe(float64(time.Since(begin).Microseconds()), nil)
+	}(time.Now())
+
 	if err := p.librdProducer.librdProducer.InitTransactions(ctx); err != nil {
 		return p.handleTxError(ctx, err, `transaction init failed`, func() error {
 			return p.InitTransactions(ctx)
@@ -51,6 +56,11 @@ func (p *librdTxProducer) BeginTransaction() error {
 }
 
 func (p *librdTxProducer) CommitTransaction(ctx context.Context) error {
+	p.config.Logger.Info(`Sending msg count`, p.librdProducer.librdProducer.Len())
+	defer func(begin time.Time) {
+		p.metrics.transactions.commitLatency.Observe(float64(time.Since(begin).Microseconds()), nil)
+	}(time.Now())
+
 	if err := p.librdProducer.librdProducer.CommitTransaction(ctx); err != nil {
 		return p.handleTxError(ctx, err, `transaction commit failed`, func() error {
 			return p.CommitTransaction(ctx)
@@ -85,7 +95,11 @@ func (p *librdTxProducer) SendOffsetsToTransaction(ctx context.Context, offsets 
 }
 
 func (p *librdTxProducer) AbortTransaction(ctx context.Context) error {
-	if err := p.librdProducer.librdProducer.AbortTransaction(ctx); err != nil {
+	defer func(begin time.Time) {
+		p.metrics.transactions.abortLatency.Observe(float64(time.Since(begin).Microseconds()), nil)
+	}(time.Now())
+
+	if err := p.librdProducer.librdProducer.AbortTransaction(ctx); err != nil && err.(librdKafka.Error).Code() != librdKafka.ErrState {
 		return errors.Wrap(err, `transaction abort failed`)
 	}
 
@@ -99,6 +113,12 @@ func (p *librdTxProducer) ProduceSync(ctx context.Context, message kafka.Record)
 }
 
 func (p *librdTxProducer) ProduceAsync(ctx context.Context, message kafka.Record) (err error) {
+	defer func(begin time.Time) {
+		p.metrics.produceLatency.Observe(float64(time.Since(begin).Microseconds()), map[string]string{
+			`topic`: message.Topic(),
+		})
+	}(time.Now())
+
 	kMessage := p.prepareMessage(message)
 	err = p.librdProducer.librdProducer.Produce(kMessage, nil)
 	if err != nil {
@@ -111,6 +131,8 @@ func (p *librdTxProducer) ProduceAsync(ctx context.Context, message kafka.Record
 }
 
 func (p *librdTxProducer) handleTxError(ctx context.Context, err error, reason string, retry func() error) error {
+	p.metrics.produceErrors.Count(1, map[string]string{`error`: err.Error()})
+
 	if err.(librdKafka.Error).IsRetriable() {
 		p.config.Logger.WarnContext(ctx, fmt.Sprintf(`%s due to (%s), retrying...`, reason, err))
 		return retry()

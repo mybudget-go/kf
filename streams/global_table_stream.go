@@ -12,11 +12,11 @@ import (
 //type GlobalTableOffset consumer.Offset
 
 // GlobalTableOffsetDefault defines the starting offset for the GlobalTable when GlobalTable stream syncing started.
-const GlobalTableOffsetDefault = kafka.Earliest
+const GlobalTableOffsetDefault = kafka.OffsetEarliest
 
 // GlobalTableOffsetLatest defines the beginning of the partition.
 // Suitable for topics with retention policy delete since the topic can contain historical data.
-const GlobalTableOffsetLatest = kafka.Latest
+const GlobalTableOffsetLatest = kafka.OffsetLatest
 
 type globalTableOptions struct {
 	initialOffset    kafka.Offset

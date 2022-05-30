@@ -109,8 +109,9 @@ type task struct {
 
 	producer kafka.Producer
 	metrics  struct {
-		reporter                   metrics.Reporter
-		processLatencyMicroseconds metrics.Observer
+		reporter                        metrics.Reporter
+		processLatencyMicroseconds      metrics.Observer
+		batchProcessLatencyMicroseconds metrics.Observer
 	}
 
 	shutDownOnce sync.Once
@@ -126,6 +127,10 @@ func (t *task) Init(ctx topology.SubTopologyContext) error {
 	t.metrics.processLatencyMicroseconds = t.metrics.reporter.Observer(metrics.MetricConf{
 		Path:   `process_latency_microseconds`,
 		Labels: []string{`topic_partition`},
+	})
+
+	t.metrics.batchProcessLatencyMicroseconds = t.metrics.reporter.Observer(metrics.MetricConf{
+		Path: `batch_process_latency_microseconds`,
 	})
 
 	defer func() {

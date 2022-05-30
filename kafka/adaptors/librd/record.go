@@ -56,7 +56,3 @@ func (r *Record) Ctx() context.Context {
 func (r *Record) String() string {
 	return fmt.Sprint(fmt.Sprintf(`%s[%d]@%d`, r.Topic(), r.Partition(), r.Offset()))
 }
-
-func (r *Record) Message() *librdKafka.Message {
-	return r.librd
-}

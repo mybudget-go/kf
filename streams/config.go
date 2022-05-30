@@ -95,7 +95,7 @@ func NewStreamBuilderConfig() *Config {
 	config.Processing.Buffer.FlushInterval = time.Second
 	config.Processing.Buffer.Size = 90000
 	config.Consumer.IsolationLevel = kafka.ReadCommitted
-	config.Consumer.Offsets.Initial = kafka.Latest
+	config.Consumer.Offsets.Initial = kafka.OffsetLatest
 	config.Producer.Acks = kafka.WaitForAll
 	config.Producer.Idempotent = true
 	config.Producer.Transactional.Enabled = true

@@ -49,7 +49,7 @@ func (g *groupSession) TopicMeta() (kafka.TopicMeta, error) {
 	return meta, nil
 }
 
-func (g *groupSession) MarkOffset(ctx context.Context, record kafka.Record, meta string) error {
+func (g *groupSession) MarkOffset(_ context.Context, record kafka.Record, meta string) error {
 	tp := record.Topic()
 	_, err := g.consumer.StoreOffsets([]librdKafka.TopicPartition{
 		{Topic: &tp, Partition: record.Partition(), Offset: librdKafka.Offset(record.Offset() + 1), Metadata: &meta},
@@ -58,18 +58,10 @@ func (g *groupSession) MarkOffset(ctx context.Context, record kafka.Record, meta
 	return err
 }
 
-func (g *groupSession) CommitOffset(ctx context.Context, record kafka.Record, meta string) error {
+func (g *groupSession) CommitOffset(_ context.Context, record kafka.Record, meta string) error {
 	tp := record.Topic()
 	_, err := g.consumer.CommitOffsets([]librdKafka.TopicPartition{
 		{Topic: &tp, Partition: record.Partition(), Offset: librdKafka.Offset(record.Offset() + 1), Metadata: &meta},
-	})
-
-	return err
-}
-
-func (g *groupSession) ResetOffset(tp kafka.TopicPartition, offset int64, metadata *string) error {
-	_, err := g.consumer.CommitOffsets([]librdKafka.TopicPartition{
-		{Topic: &tp.Topic, Partition: tp.Partition, Offset: librdKafka.Offset(offset), Metadata: metadata},
 	})
 
 	return err

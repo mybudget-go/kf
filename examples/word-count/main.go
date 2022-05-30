@@ -27,7 +27,7 @@ func main() {
 	config := streams.NewStreamBuilderConfig()
 	config.BootstrapServers = strings.Split(*bootstrapServers, `,`)
 	config.ApplicationId = `word-count`
-	config.Consumer.Offsets.Initial = kafka.Earliest
+	config.Consumer.Offsets.Initial = kafka.OffsetEarliest
 	config.Logger = log.Constructor.Log()
 
 	seed()

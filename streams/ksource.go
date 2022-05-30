@@ -37,6 +37,12 @@ func ConsumeWithTopicNameFormatterFunc(fn TopicNameFormatter) KSourceOption {
 	}
 }
 
+func ConsumeWithOffset(offset kafka.Offset) KSourceOption {
+	return func(source *KSource) {
+		source.offsetReset = offset
+	}
+}
+
 func ConsumeWithKeyEncoder(encoder encoding.Encoder) KSourceOption {
 	return func(source *KSource) {
 		source.encoder.Key = encoder
@@ -77,6 +83,7 @@ func NewKSource(topic string, opts ...KSourceOption) topology.Source {
 	}
 
 	src.autoCreate.AutoTopicOpts = new(AutoTopicOpts)
+	src.offsetReset = kafka.OffsetStored
 
 	// apply options
 	for _, opt := range opts {
@@ -95,7 +102,7 @@ func (s *KSource) Type() topology.Type {
 	}
 }
 
-func (s *KSource) Build(ctx topology.SubTopologyContext) (topology.Node, error) {
+func (s *KSource) Build(_ topology.SubTopologyContext) (topology.Node, error) {
 	// validate mandatory options
 	if s.encoder.Key == nil {
 		return nil, s.Err(`key encoder not provided`)
@@ -207,4 +214,8 @@ func (s *KSource) AutoCreate() bool {
 
 func (s *KSource) Internal() bool {
 	return s.autoCreate.enabled
+}
+
+func (s *KSource) InitialOffset() kafka.Offset {
+	return s.offsetReset
 }

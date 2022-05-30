@@ -3,6 +3,7 @@ package tasks
 import (
 	"fmt"
 	"github.com/gmbyapa/kstream/pkg/async"
+	"github.com/tryfix/metrics"
 	"sync"
 	"time"
 
@@ -36,10 +37,14 @@ type buffer struct {
 	mu                sync.Mutex
 	stopping, stopped chan struct{}
 
+	metrics struct {
+		batchSize metrics.Counter
+	}
+
 	logger log.Logger
 }
 
-func newBuffer(config BufferConfig, onFlush OnFlush, logger log.Logger) *buffer {
+func newBuffer(config BufferConfig, onFlush OnFlush, logger log.Logger, reporter metrics.Reporter) *buffer {
 	buf := &buffer{
 		size:     config.Size,
 		mu:       sync.Mutex{},
@@ -49,6 +54,10 @@ func newBuffer(config BufferConfig, onFlush OnFlush, logger log.Logger) *buffer 
 		onFlush:  onFlush,
 		logger:   logger,
 	}
+
+	buf.metrics.batchSize = reporter.Counter(metrics.MetricConf{
+		Path: `batch_size`,
+	})
 
 	go buf.run()
 
@@ -84,6 +93,8 @@ func (b *buffer) flush() error {
 	defer func() {
 		b.logger.Info(fmt.Sprintf(`Buffer flushed with %d records`, count))
 		b.records = nil
+
+		b.metrics.batchSize.Count(float64(count), nil)
 	}()
 
 	return b.onFlush(b.records)

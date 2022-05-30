@@ -33,8 +33,14 @@ type librdProducer struct {
 	librdProducer *librdKafka.Producer
 
 	metrics struct {
-		produceLatency      metrics.Observer
-		batchProduceLatency metrics.Observer
+		produceLatency metrics.Observer
+		transactions   struct {
+			initLatency        metrics.Observer
+			sendOffsetsLatency metrics.Observer
+			commitLatency      metrics.Observer
+			abortLatency       metrics.Observer
+		}
+		produceErrors metrics.Counter
 	}
 }
 
@@ -65,60 +71,6 @@ func (c *producerProvider) NewBuilder(conf *kafka.ProducerConfig) kafka.Producer
 	}
 }
 
-/*func NewProducerAdaptor(configure func(*ProducerConfig)) kafka.ProducerBuilder {
-	defaultConf := NewProducerConfig()
-	configure(defaultConf)
-
-	return func(configure func(*kafka.ProducerConfig)) (kafka.Producer, error) {
-		defaultConfCopy := defaultConf.copy()
-		configure(defaultConfCopy.ProducerConfig)
-		if err := defaultConfCopy.Librd.SetKey(`client.id`, defaultConfCopy.Id); err != nil {
-			panic(err)
-		}
-
-		if err := defaultConfCopy.Librd.SetKey(`bootstrap.servers`, strings.Join(defaultConfCopy.BootstrapServers, `,`)); err != nil {
-			panic(err)
-		}
-
-		if err := defaultConfCopy.Librd.SetKey(`go.logs.channel.enable`, true); err != nil {
-			return nil, errors.New(err.Error())
-		}
-
-		// Making sure transactional properties are set
-		if defaultConfCopy.Transactional.Enabled {
-			if err := defaultConfCopy.Librd.SetKey(`enable.idempotence`, true); err != nil {
-				panic(err)
-			}
-
-			// For transactional producers, delivery success is
-			// acknowledged by producer batch commit, so we don't need
-			// to listen to individual delivery reports
-			if err := defaultConfCopy.Librd.SetKey(`go.delivery.reports`, false); err != nil {
-				panic(err)
-			}
-
-			// TODO use this to recreate producer failure scenarios
-			//if err := defaultConfCopy.Librd.SetKey(`transaction.timeout.ms`, 1000); err != nil{
-			//	panic(err)
-			//}
-
-			if err := defaultConfCopy.Librd.SetKey(`transactional.id`, defaultConfCopy.Transactional.Id); err != nil {
-				panic(err)
-			}
-
-			if err := defaultConfCopy.Librd.SetKey(`max.in.flight.requests.per.connection`, 1); err != nil {
-				panic(err)
-			}
-
-			if err := defaultConfCopy.Librd.SetKey(`acks`, `all`); err != nil {
-				panic(err)
-			}
-		}
-
-		return NewProducer(defaultConfCopy)
-	}
-}*/
-
 func NewProducer(configs *ProducerConfig) (kafka.Producer, error) {
 	if err := configs.setUp(); err != nil {
 		return nil, errors.Wrap(err, `producer configs setup failed`)
@@ -138,12 +90,11 @@ func NewProducer(configs *ProducerConfig) (kafka.Producer, error) {
 	configs.Logger.Info(`Producer initiating...`)
 	producer, err := librdKafka.NewProducer(configs.Librd)
 	if err != nil {
-		return nil, errors.Wrap(err, fmt.Sprintf(`[%s] init failed`, configs.Id))
+		return nil, errors.Wrap(err, fmt.Sprintf(`Producer(%s) init failed`, configs.Id))
 	}
 
 	defer configs.Logger.Info(`Producer initiated`)
 
-	labels := []string{`topic`, `partition`}
 	p := &librdProducer{
 		config:        configs,
 		librdProducer: producer,
@@ -166,14 +117,32 @@ func NewProducer(configs *ProducerConfig) (kafka.Producer, error) {
 	go p.printLogs()
 
 	p.metrics.produceLatency = configs.MetricsReporter.Observer(metrics.MetricConf{
-		Path:        `k_stream_producer_produced_latency_microseconds`,
-		Labels:      labels,
+		Path:   `kstream_producer_produced_latency_microseconds`,
+		Labels: []string{`topic`},
+		ConstLabels: map[string]string{
+			`producer_id`: configs.Id,
+			`async`:       fmt.Sprintf(`%t`, p.config.Transactional.Enabled),
+		},
+	})
+
+	p.metrics.transactions.commitLatency = configs.MetricsReporter.Observer(metrics.MetricConf{
+		Path:        `kstream_producer_transaction_commit_latency_microseconds`,
 		ConstLabels: map[string]string{`producer_id`: configs.Id},
 	})
 
-	p.metrics.batchProduceLatency = configs.MetricsReporter.Observer(metrics.MetricConf{
-		Path:        `k_stream_producer_batch_produced_latency_microseconds`,
-		Labels:      append(labels, `size`),
+	p.metrics.transactions.initLatency = configs.MetricsReporter.Observer(metrics.MetricConf{
+		Path:        `kstream_producer_transaction_init_latency_microseconds`,
+		ConstLabels: map[string]string{`producer_id`: configs.Id},
+	})
+
+	p.metrics.transactions.abortLatency = configs.MetricsReporter.Observer(metrics.MetricConf{
+		Path:        `kstream_producer_transaction_abort_latency_microseconds`,
+		ConstLabels: map[string]string{`producer_id`: configs.Id},
+	})
+
+	p.metrics.produceErrors = configs.MetricsReporter.Counter(metrics.MetricConf{
+		Path:        `kstream_producer_error_count`,
+		Labels:      []string{`error`},
 		ConstLabels: map[string]string{`producer_id`: configs.Id},
 	})
 
@@ -305,8 +274,8 @@ func (p *librdProducer) printLogs() {
 }
 
 func (p *librdProducer) forceClose() error {
-	p.config.Logger.Error(`Producer closing forcefully...`) // TODO change log level
-	defer p.config.Logger.Error(`Producer closed`)          // TODO change log level
+	p.config.Logger.Warn(`Producer closing forcefully...`)
+	defer p.config.Logger.Warn(`Producer closed`)
 
 	p.config.Logger.Info(`Purging producer queues kafka.PurgeInFlight|kafka.PurgeNonBlocking|kafka.PurgeQueue`)
 	if err := p.librdProducer.Purge(

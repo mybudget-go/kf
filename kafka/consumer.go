@@ -20,10 +20,6 @@ func (tp TopicPartition) String() string {
 
 type TopicMeta []TopicPartition
 
-func (meta *TopicMeta) TPList() Assignment {
-	return Assignment(*meta)
-}
-
 // GroupMeta wraps consumer group metadata used in transactional producer commits.
 type GroupMeta struct {
 	Meta interface{}
@@ -66,15 +62,18 @@ type Partition interface {
 type Offset int64
 
 const (
-	Unknown  Offset = -3
-	Earliest Offset = -2
-	Latest   Offset = -1
+	OffsetEarliest Offset = -2
+	OffsetLatest   Offset = -1
+	OffsetStored   Offset = -3
+	OffsetUnknown  Offset = -4
 )
 
 func (o Offset) String() string {
 	switch o {
-	case -3:
+	case -4:
 		return `Unknown`
+	case -3:
+		return `Stored`
 	case -2:
 		return `Earliest`
 	case -1:
@@ -129,8 +128,10 @@ func NewConfig() *GroupConsumerConfig {
 	conf := &GroupConsumerConfig{
 		ConsumerConfig: NewPartitionConsumerConfig(),
 	}
-	conf.Offsets.Commit.Interval = 1 * time.Second
-	conf.Offsets.Initial = Earliest
+
+	conf.Offsets.Commit.Auto = true
+	conf.Offsets.Commit.Interval = 5000 * time.Millisecond
+	conf.Offsets.Initial = OffsetLatest
 
 	return conf
 }

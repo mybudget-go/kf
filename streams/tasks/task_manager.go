@@ -113,8 +113,6 @@ func (t *taskManager) addTask(ctx topology.BuilderContext, id TaskID, subTopolog
 		options:  taskOpts,
 	}
 
-	tsk.buffer = newBuffer(tsk.options.buffer, tsk.onFlush, logger.NewLog(log.Prefixed(`Buffer`)))
-
 	tsk.metrics.reporter = ctx.MetricsReporter().Reporter(metrics.ReporterConf{
 		Subsystem: "task_manager_task",
 		ConstLabels: map[string]string{
@@ -122,6 +120,13 @@ func (t *taskManager) addTask(ctx topology.BuilderContext, id TaskID, subTopolog
 			`task_id`: id.String(),
 		},
 	})
+
+	tsk.buffer = newBuffer(
+		tsk.options.buffer,
+		tsk.onFlush,
+		logger.NewLog(log.Prefixed(`Buffer`)),
+		tsk.metrics.reporter,
+	)
 
 	var task Task = tsk
 
@@ -137,7 +142,12 @@ func (t *taskManager) addTask(ctx topology.BuilderContext, id TaskID, subTopolog
 			task:     tsk,
 			producer: tsk.producer.(kafka.TransactionalProducer),
 		}
-		kTransactionalTask.buffer = newBuffer(kTransactionalTask.options.buffer, kTransactionalTask.onFlush, logger.NewLog(log.Prefixed(`Buffer`)))
+		kTransactionalTask.buffer = newBuffer(
+			kTransactionalTask.options.buffer,
+			kTransactionalTask.onFlush,
+			logger.NewLog(log.Prefixed(`Buffer`)),
+			tsk.metrics.reporter,
+		)
 		task = kTransactionalTask
 	}
 

@@ -6,6 +6,7 @@ import (
 	"github.com/gmbyapa/kstream/kafka"
 	"github.com/gmbyapa/kstream/streams/topology"
 	"github.com/tryfix/log"
+	"time"
 )
 
 type transactionalTask struct {
@@ -22,9 +23,14 @@ func (t *transactionalTask) Init(ctx topology.SubTopologyContext) error {
 }
 
 func (t *transactionalTask) onFlush(records []*Record) error {
-	return t.processBatch(nil, records)
+	defer func(since time.Time) {
+		t.metrics.batchProcessLatencyMicroseconds.Observe(float64(time.Since(since).Microseconds()), nil)
+	}(time.Now())
+
+	return t.processBatch(nil, records, 0)
 }
-func (t *transactionalTask) processBatch(previousErr error, records []*Record) error {
+func (t *transactionalTask) processBatch(previousErr error, records []*Record, itr int) error {
+	itr++
 	// Purge the store cache before the processing starts.
 	// This will clear out any half processed states from state store caches.
 	// The batch will either process and committed or will fail as a whole.
@@ -33,16 +39,16 @@ func (t *transactionalTask) processBatch(previousErr error, records []*Record) e
 	}
 
 	// Check if producer needs a restart
-	if fatalErr, ok := previousErr.(kafka.ProducerErr); ok {
-		t.logger.Warn(fmt.Sprintf(`Fatal error %s while processing record batch`, fatalErr))
-		if fatalErr.RequiresRestart() {
-			t.logger.Warn(fmt.Sprintf(`Restarting producer due to %s`, fatalErr))
+	if producerErr, ok := previousErr.(kafka.ProducerErr); ok {
+		t.logger.Warn(fmt.Sprintf(`Fatal error %s while processing record batch`, producerErr))
+		if producerErr.RequiresRestart() {
+			t.logger.Warn(fmt.Sprintf(`Restarting producer due to %s`, producerErr))
 			if err := t.producer.Restart(); err != nil {
 				log.Fatal(err) // TODO handle error
 			}
 
 			// Re init transaction
-			t.logger.Warn(fmt.Sprintf(`Re Initing producer transaction due to %s`, fatalErr))
+			t.logger.Warn(fmt.Sprintf(`Re Initing producer transaction due to %s`, producerErr))
 			if err := t.producer.InitTransactions(context.Background()); err != nil { // TODO handle the transaction timeout (context.Background())
 				log.Fatal(err) // TODO handle error
 			}
@@ -51,7 +57,7 @@ func (t *transactionalTask) processBatch(previousErr error, records []*Record) e
 
 	if err := t.producer.BeginTransaction(); err != nil {
 		t.logger.Warn(fmt.Sprintf(`BeginTransaction failed due to %s, retrying batch...`, err))
-		return t.processBatch(err, records)
+		return t.processBatch(err, records, itr)
 	}
 
 	offsetMap := map[string]kafka.ConsumerOffset{}
@@ -73,18 +79,19 @@ func (t *transactionalTask) processBatch(previousErr error, records []*Record) e
 				t.logger.Error(fmt.Sprintf(`transaction abort failed due to %s`, txAbErr))
 			}
 
-			return t.processBatch(err, records)
+			return t.processBatch(err, records, itr)
 		}
 	}
 
 	meta, err := t.session.GroupMeta()
 	if err != nil {
-		if err := t.producer.AbortTransaction(context.Background()); err != nil {
-			t.logger.Error(`transaction GroupMeta fetch failed`)
+		t.logger.Error(fmt.Sprintf(`transaction Consumer GroupMeta fetch failed due to %s, abotring transactions`, err))
+		if txAbErr := t.producer.AbortTransaction(context.Background()); txAbErr != nil {
+			t.logger.Error(fmt.Sprintf(`transaction abort failed due to %s`, txAbErr))
 		}
 
 		// Retrying the batch
-		return t.processBatch(err, records)
+		return t.processBatch(err, records, itr)
 	}
 
 	var offsets []kafka.ConsumerOffset
@@ -94,15 +101,13 @@ func (t *transactionalTask) processBatch(previousErr error, records []*Record) e
 
 	if err := t.producer.SendOffsetsToTransaction(context.Background(), offsets, meta); err != nil {
 		// Retrying the batch
-		return t.processBatch(err, records)
+		return t.processBatch(err, records, itr)
 	}
 
 	if err := t.producer.CommitTransaction(context.Background()); err != nil {
-		t.logger.Warn(fmt.Sprintf(`Batch commit failed due to %s, aborting the transaction`, err))
 		// Retrying the batch
-		t.logger.Warn(fmt.Sprintf(`Transaction aborted due to %s. Retrying...`, err))
-
-		return t.processBatch(err, records)
+		t.logger.Warn(fmt.Sprintf(`Transaction commit failed due to %s. Retrying...`, err))
+		return t.processBatch(err, records, itr)
 	}
 
 	// Flush(Commit) all the stores in the Task

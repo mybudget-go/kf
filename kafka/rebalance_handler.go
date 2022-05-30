@@ -4,20 +4,25 @@ import (
 	"context"
 )
 
-type Assignment []TopicPartition
+type Assignment interface {
+	TPs() TopicPartitions
+	ResetOffset(tp TopicPartition, offset Offset)
+}
+
+type TopicPartitions []TopicPartition
 
 // Len is part of sort.Interface.
-func (list *Assignment) Len() int {
-	return len(*list)
+func (list TopicPartitions) Len() int {
+	return len(list)
 }
 
 // Swap is part of sort.Interface.
-func (list *Assignment) Swap(i, j int) {
-	(*list)[i], (*list)[j] = (*list)[j], (*list)[i]
+func (list TopicPartitions) Swap(i, j int) {
+	(list)[i], (list)[j] = (list)[j], (list)[i]
 }
 
 // Less is part of sort.Interface.
-func (list *Assignment) Less(i, j int) bool {
+func (list TopicPartitions) Less(i, j int) bool {
 	return i < j
 }
 

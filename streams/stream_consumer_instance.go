@@ -39,11 +39,19 @@ func (r *streamConsumerInstance) OnPartitionRevoked(ctx context.Context, session
 	return nil
 }
 
-func (r *streamConsumerInstance) OnPartitionAssigned(ctx context.Context, session kafka.GroupSession) error {
-	r.currentAssignment = r.generation.FindMappingsByTPs(session.Assignment()...)
+func (r *streamConsumerInstance) OnPartitionAssigned(_ context.Context, session kafka.GroupSession) error {
+	r.currentAssignment = r.generation.FindMappingsByTPs(session.Assignment().TPs()...)
 	r.logger.Info(fmt.Sprintf("Assigning tasks -> \n%s", r.currentAssignment))
 	wg := sync.WaitGroup{}
 	wg.Add(len(r.currentAssignment))
+
+	// Apply offset resets
+	for _, tp := range session.Assignment().TPs() {
+		if src := r.topologyBuilder.SourceByTopic(tp.Topic); src != nil {
+			session.Assignment().ResetOffset(tp, src.InitialOffset())
+		}
+	}
+
 	for _, mapping := range r.currentAssignment {
 		go func(wg *sync.WaitGroup, mapping *tasks.TaskMapping) {
 			defer wg.Done()

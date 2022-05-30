@@ -95,7 +95,7 @@ func (a *Assigner) Generate(tps []kafka.TopicPartition, topologyBuilder topology
 	//
 	//
 	//              			  +---- Topic 1 P1
-	//    Task 2(SubTopology2) ---|
+	//    Task 2(SubTopology1) ---|
 	//              			  |
 	//              			  +---- Topic 2 P1
 	type topologyToTopicPartitionMap struct {
@@ -127,6 +127,7 @@ func (a *Assigner) Generate(tps []kafka.TopicPartition, topologyBuilder topology
 	// Assign a hash to each SubTopologyBuilder mapping. The hash has to be unique and consistent as this will be used
 	// in each PartitionsAssigned event to figure out the Task assignment
 	for _, mp := range subTopologyToPartition {
+		// Sort the topic list to make sure consistency of hash
 		sort.Strings(mp.topics)
 		mp.hash = base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf(`%s#%d`, strings.Join(mp.topics, ``), mp.partition)))
 	}

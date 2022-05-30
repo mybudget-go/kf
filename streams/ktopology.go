@@ -24,6 +24,18 @@ func (k *kTopology) StreamTopologies() topology.SubTopologyBuilders {
 	return tps
 }
 
+func (k *kTopology) SourceByTopic(topic string) topology.Source {
+	for _, subTp := range k.StreamTopologies() {
+		for _, source := range subTp.Sources() {
+			if source.Topic() == topic {
+				return source
+			}
+		}
+	}
+
+	return nil
+}
+
 func (k *kTopology) GlobalTableTopologies() topology.SubTopologyBuilders {
 	var tps []topology.SubTopologyBuilder
 	for _, sTp := range k.SubTopologies() {

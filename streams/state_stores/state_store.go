@@ -38,6 +38,7 @@ func (str *StateStore) Get(ctx context.Context, key interface{}) (interface{}, e
 		return nil, errors.Wrap(err, fmt.Sprintf(`store [%s] key encode error`, str))
 	}
 
+	// TODO need to check the existence
 	if valByt := str.cache.Read(keyByt); valByt != nil {
 		val, err := str.ValEncoder().Decode(valByt)
 		if err != nil {

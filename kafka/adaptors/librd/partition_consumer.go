@@ -6,10 +6,8 @@ import (
 	librdKafka "github.com/confluentinc/confluent-kafka-go/kafka"
 	"github.com/gmbyapa/kstream/kafka"
 	"github.com/gmbyapa/kstream/pkg/errors"
-	"github.com/google/uuid"
 	"github.com/tryfix/log"
 	"github.com/tryfix/metrics"
-	"strings"
 	"sync"
 	"time"
 )
@@ -51,53 +49,27 @@ func (c *consumerProvider) NewBuilder(conf *kafka.ConsumerConfig) kafka.Consumer
 	return func(configure func(*kafka.ConsumerConfig)) (kafka.PartitionConsumer, error) {
 		defaultConfCopy := c.config.copy()
 		configure(defaultConfCopy.ConsumerConfig)
-		if err := defaultConfCopy.Librd.SetKey(`client.id`, defaultConfCopy.Id); err != nil {
-			return nil, errors.New(err.Error())
-		}
-
-		if err := defaultConfCopy.Librd.SetKey(`bootstrap.servers`, strings.Join(defaultConfCopy.BootstrapServers, `,`)); err != nil {
-			return nil, errors.New(err.Error())
-		}
-
-		if err := defaultConfCopy.Librd.SetKey(`enable.auto.offset.store`, false); err != nil {
-			return nil, errors.New(err.Error())
-		}
-
-		if err := defaultConfCopy.Librd.SetKey(`enable.auto.commit`, false); err != nil {
-			return nil, errors.New(err.Error())
-		}
-
-		if err := defaultConfCopy.Librd.SetKey(`group.id`, uuid.New().String()); err != nil {
-			return nil, errors.New(err.Error())
-		}
-
-		switch defaultConfCopy.IsolationLevel {
-		case kafka.ReadCommitted:
-			if err := defaultConfCopy.Librd.SetKey(`isolation.level`, `read_committed`); err != nil {
-				return nil, errors.New(err.Error())
-			}
-		case kafka.ReadUncommitted:
-			if err := defaultConfCopy.Librd.SetKey(`isolation.level`, `read_uncommitted`); err != nil {
-				return nil, errors.New(err.Error())
-			}
-		}
 
 		return NewPartitionConsumer(defaultConfCopy)
 	}
 }
 
-func NewPartitionConsumer(c *ConsumerConfig) (kafka.PartitionConsumer, error) {
-	con, err := librdKafka.NewConsumer(c.Librd)
+func NewPartitionConsumer(configs *ConsumerConfig) (kafka.PartitionConsumer, error) {
+	if err := configs.setUp(); err != nil {
+		return nil, errors.Wrap(err, `producer configs setup failed`)
+	}
+
+	con, err := librdKafka.NewConsumer(configs.Librd)
 	if err != nil {
 		return nil, errors.Wrap(err, `new consumer failed`)
 	}
 
 	pc := &partitionConsumer{
 		consumer:        con,
-		config:          c,
+		config:          configs,
 		partitions:      map[string]*partition{},
-		logger:          c.ConsumerConfig.Logger.NewLog(log.Prefixed(`PartitionConsumer`)),
-		metricsReporter: c.MetricsReporter,
+		logger:          configs.ConsumerConfig.Logger.NewLog(log.Prefixed(`PartitionConsumer`)),
+		metricsReporter: configs.MetricsReporter,
 	}
 
 	go pc.consumeMessages()
@@ -206,7 +178,7 @@ func (c *partitionConsumer) GetOffsetLatest(topic string, partition int32) (offs
 		librdKafka.TopicPartition{
 			Topic:     &topic,
 			Partition: partition,
-			Offset:    librdKafka.Offset(kafka.Latest),
+			Offset:    librdKafka.Offset(kafka.OffsetLatest),
 		},
 	}, 60000) // TODO make this configurable
 	if err != nil {
@@ -222,7 +194,7 @@ func (c *partitionConsumer) GetOffsetOldest(topic string, partition int32) (offs
 		librdKafka.TopicPartition{
 			Topic:     &topic,
 			Partition: partition,
-			Offset:    librdKafka.Offset(kafka.Earliest),
+			Offset:    librdKafka.Offset(kafka.OffsetEarliest),
 		},
 	}, 60000)
 	if err != nil {

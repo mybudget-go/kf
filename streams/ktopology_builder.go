@@ -144,12 +144,12 @@ func (k *kTopologyBuilder) setup(ctx topology.BuilderContext) error {
 
 	tpInfo, err := ctx.Admin().FetchInfo(topics)
 	if err != nil {
-		return errors.Wrapf(err, `metadata fetch failed. topics %+v`, topics)
+		return errors.Wrapf(err, `Metadata fetch failed. Topics %+v`, topics)
 	}
 
 	for _, info := range tpInfo {
 		if info.Error != nil {
-			return errors.Wrap(info.Error, fmt.Sprintf(`metadata fetch failed on topic %s`, info.Name))
+			return errors.Wrap(info.Error, fmt.Sprintf(`Metadata fetch failed on topic %s`, info.Name))
 		}
 	}
 

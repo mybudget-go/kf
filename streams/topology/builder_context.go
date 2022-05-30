@@ -94,7 +94,7 @@ type ChangelogSyncer interface {
 
 type StateStore interface {
 	stores.Store
-	// Flush flashes the records in buffer to
+	// Flush flashes the records in buffer to stores.Store
 	Flush() error
 	Purge()
 	ChangelogSyncer
