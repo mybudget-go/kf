@@ -108,6 +108,7 @@ func (i *indexedStore) GetIndexedRecords(ctx context.Context, indexName string, 
 		currentKey: 0,
 		valid:      false,
 	}
+
 	indexes, err := idx.Read(key)
 	if err != nil {
 		if nativeErrors.Is(err, UnknownIndex) {
