@@ -94,18 +94,13 @@ MAIN:
 				atomic.AddInt64(&syncedCount, 1)
 
 				// Handle tombstones
-				if len(e.Value()) < 1 {
-					if err := lg.store.Backend().Delete(e.Key()); err != nil {
-						return errors.Wrapf(err, `Cannot delete(tombstone) message due to %s`, err)
+				if idxStor, ok := lg.store.(stores.IndexedStore); ok && len(idxStor.Indexes()) > 0 {
+					if err := lg.updateIndexStore(idxStor, e); err != nil {
+						lg.logger.Warn(fmt.Sprintf(`Cannot update indexed store due to %s`, err))
 					}
 				} else {
-					// For indexed records we cannot directly update the backend
-					if _, ok := lg.store.(stores.IndexedStore); ok {
-						panic(`KStream does not support indexed stores`)
-					} else {
-						if err := lg.store.Backend().Set(e.Key(), e.Value(), 0); err != nil {
-							return errors.Wrapf(err, `Cannot write message due to %s`, err)
-						}
+					if err := lg.updateStore(e); err != nil {
+						lg.logger.Warn(fmt.Sprintf(`Cannot update store due to %s`, err))
 					}
 				}
 
@@ -145,6 +140,56 @@ func (lg *changelogSyncer) Stop() error {
 
 	close(lg.stopping)
 	<-lg.running
+
+	return nil
+}
+
+func (lg *changelogSyncer) updateIndexStore(store stores.IndexedStore, record kafka.Record) error {
+	if len(record.Value()) < 1 {
+		key, err := lg.store.KeyEncoder().Decode(record.Key())
+		if err != nil {
+			return errors.Wrap(err, `store index update error due to key encode failed`)
+		}
+
+		// Delete indexes (if any)
+		if err := stores.DeleteIndexes(record.Ctx(), store, key); err != nil {
+			return errors.Wrapf(err, `delete indexes failed on message(%s)`, record)
+		}
+
+		// Delete record from backend (tombstone)
+		return lg.store.Backend().Delete(record.Key())
+	}
+
+	// We need to decode Key and Value here to update the indexes(if any)
+	key, err := lg.store.KeyEncoder().Decode(record.Key())
+	if err != nil {
+		return errors.Wrapf(err, `key decode failed on message(%s)`, record)
+	}
+
+	val, err := lg.store.ValEncoder().Decode(record.Value())
+	if err != nil {
+		return errors.Wrapf(err, `value decode failed on message(%s)`, record)
+	}
+
+	if err := stores.UpdateIndexes(record.Ctx(), store, key, val); err != nil {
+		return errors.Wrapf(err, `update indexes failed on message(%s)`, record)
+	}
+
+	return lg.store.Backend().Set(record.Key(), record.Value(), 0)
+}
+
+func (lg *changelogSyncer) updateStore(record kafka.Record) error {
+	if len(record.Value()) < 1 {
+		if err := lg.store.Backend().Delete(record.Key()); err != nil {
+			return errors.Wrapf(err, `Cannot delete(tombstone) message(%s)`, record)
+		}
+
+		return nil
+	}
+
+	if err := lg.store.Backend().Set(record.Key(), record.Value(), 0); err != nil {
+		return errors.Wrapf(err, `Cannot write message(%s)`, record)
+	}
 
 	return nil
 }

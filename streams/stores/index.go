@@ -2,8 +2,13 @@ package stores
 
 import (
 	"fmt"
+	"github.com/gmbyapa/kstream/pkg/errors"
 	"sync"
 )
+
+type KeyMapper func(key, val interface{}) (idx string)
+
+var UnknownIndex = errors.New(`index does not exist`)
 
 type index struct {
 	indexes map[interface{}]map[interface{}]struct{} // indexKey:recordKey:bool
@@ -52,16 +57,6 @@ func (s *index) Hash(key, val interface{}) (hash interface{}) {
 	return s.mapper(key, val)
 }
 
-func (s *index) WriteHash(hash, key interface{}) error {
-	_, ok := s.indexes[hash]
-	if !ok {
-		s.indexes[hash] = make(map[interface{}]struct{})
-	}
-	s.indexes[hash][key] = struct{}{}
-
-	return nil
-}
-
 func (s *index) Delete(key, value interface{}) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -103,12 +98,14 @@ func (s *index) Values() map[interface{}][]interface{} {
 func (s *index) Read(key interface{}) ([]interface{}, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	var indexes []interface{}
-	index, ok := s.indexes[key]
+	idx, ok := s.indexes[key]
 	if !ok {
 		return nil, UnknownIndex
 	}
-	for k := range index {
+
+	for k := range idx {
 		indexes = append(indexes, k)
 	}
 

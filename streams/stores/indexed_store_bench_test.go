@@ -9,24 +9,30 @@ import (
 	"math/rand"
 	"strconv"
 	"strings"
-	"sync"
 	"testing"
 )
 
 func BenchmarkIndexedStore_Set(b *testing.B) {
-	index := NewStringHashIndex(`foo`, func(key, val interface{}) (idx string) {
+	idx := NewIndex(`foo`, func(key, val interface{}) (idx interface{}) {
 		return strings.Split(val.(string), `,`)[0]
 	})
 
-	i := &indexedStore{
-		Store:   NewMockStore(`foo`, encoding.StringEncoder{}, encoding.StringEncoder{}, backend.NewMockBackend(`foo`, 0)),
-		indexes: map[string]Index{`foo`: index},
-		mu:      new(sync.Mutex),
+	conf := memory.NewConfig()
+	conf.MetricsReporter = metrics.NoopReporter()
+	st, err := NewIndexedStore(
+		`foo`,
+		encoding.StringEncoder{},
+		encoding.StringEncoder{},
+		[]Index{idx},
+		WithBackend(memory.NewMemoryBackend(`foo`, conf)))
+	if err != nil {
+		b.Error(err)
 	}
+
 	b.ResetTimer()
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			if err := i.Set(context.Background(), strconv.Itoa(rand.Intn(99999)+1), `111,222`, 0); err != nil {
+			if err := st.Set(context.Background(), strconv.Itoa(rand.Intn(99999)+1), `111,222`, 0); err != nil {
 				b.Error(err)
 			}
 		}
@@ -34,15 +40,15 @@ func BenchmarkIndexedStore_Set(b *testing.B) {
 }
 
 func BenchmarkIndexedStore_GetIndexedRecords(b *testing.B) {
-	indexedStore := NewMockStore(`foo`, encoding.StringEncoder{}, encoding.StringEncoder{}, backend.NewMockBackend(`foo`, 0))
+	idxStore := NewMockStore(`foo`, encoding.StringEncoder{}, encoding.StringEncoder{}, backend.NewMockBackend(`foo`, 0))
 	for i := 1; i < 99909; i++ {
 		compKey := strconv.Itoa(rand.Intn(4)+1) + `:` + strconv.Itoa(i)
-		if err := indexedStore.Set(context.Background(), strconv.Itoa(i), compKey, 0); err != nil {
+		if err := idxStore.Set(context.Background(), strconv.Itoa(i), compKey, 0); err != nil {
 			b.Error(err)
 		}
 	}
 
-	index := NewStringHashIndex(`foo`, func(key, val interface{}) (idx string) {
+	idx := NewIndex(`foo`, func(key, val interface{}) (idx interface{}) {
 		return strings.Split(val.(string), `:`)[0]
 	})
 
@@ -52,7 +58,7 @@ func BenchmarkIndexedStore_GetIndexedRecords(b *testing.B) {
 		`foo`,
 		encoding.StringEncoder{},
 		encoding.StringEncoder{},
-		[]Index{index},
+		[]Index{idx},
 		WithBackend(memory.NewMemoryBackend(`foo`, conf)))
 	if err != nil {
 		b.Error(err)

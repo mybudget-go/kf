@@ -6,34 +6,47 @@ import (
 	"github.com/gmbyapa/kstream/streams/encoding"
 	"reflect"
 	"strings"
-	"sync"
 	"testing"
 )
 
-func Test_indexedStore_Delete(t *testing.T) {
-	index := NewIndex(`foo`, func(key, val interface{}) (idx interface{}) {
+func indexStoreTestStoreSetup(t *testing.T, idx Index) IndexedStore {
+	i, err := NewIndexedStore(
+		`foo`,
+		encoding.StringEncoder{},
+		encoding.StringEncoder{},
+		[]Index{idx},
+		WithBackend(backend.NewMockBackend(`foo`, 0)),
+	)
+	if err != nil {
+		t.Error(err)
+	}
+
+	return i
+}
+
+func indexStoreIndexSetup(t *testing.T) Index {
+	return NewIndex(`foo`, func(key, val interface{}) (idx interface{}) {
 		return strings.Split(val.(string), `,`)[0]
 	})
+}
 
-	i := &indexedStore{
-		Store:   NewMockStore(`foo`, encoding.StringEncoder{}, encoding.StringEncoder{}, backend.NewMockBackend(`foo`, 0)),
-		indexes: map[string]Index{`foo`: index},
-		mu:      new(sync.Mutex),
-	}
+func Test_indexedStore_Delete(t *testing.T) {
+	idx := indexStoreIndexSetup(t)
+	str := indexStoreTestStoreSetup(t, idx)
 
-	if err := i.Set(context.Background(), `200`, `111,222`, 0); err != nil {
+	if err := str.Set(context.Background(), `200`, `111,222`, 0); err != nil {
 		t.Error(err)
 	}
 
-	if err := i.Set(context.Background(), `300`, `111,333`, 0); err != nil {
+	if err := str.Set(context.Background(), `300`, `111,333`, 0); err != nil {
 		t.Error(err)
 	}
 
-	if err := i.Delete(context.Background(), `200`); err != nil {
+	if err := str.Delete(context.Background(), `200`); err != nil {
 		t.Error(err)
 	}
 
-	data, err := index.Read(`111`)
+	data, err := idx.Read(`111`)
 	if err != nil {
 		t.Error(err)
 	}
@@ -43,28 +56,51 @@ func Test_indexedStore_Delete(t *testing.T) {
 	}
 }
 
-func Test_indexedStore_Set(t *testing.T) {
-	index := NewStringHashIndex(`foo`, func(key, val interface{}) (idx string) {
-		return strings.Split(val.(string), `,`)[0]
-	})
+func Test_indexedStore_Delete_Should_Remove_Indexed_Values(t *testing.T) {
+	idx := indexStoreIndexSetup(t)
+	str := indexStoreTestStoreSetup(t, idx)
 
-	i := &indexedStore{
-		Store:   NewMockStore(`foo`, encoding.StringEncoder{}, encoding.StringEncoder{}, backend.NewMockBackend(`foo`, 0)),
-		indexes: map[string]Index{`foo`: index},
-		mu:      new(sync.Mutex),
-	}
-
-	if err := i.Set(context.Background(), `200`, `111,222`, 0); err != nil {
+	if err := str.Set(context.Background(), `200`, `111,222`, 0); err != nil {
 		t.Error(err)
 	}
 
-	if err := i.Set(context.Background(), `300`, `111,333`, 0); err != nil {
+	if err := str.Set(context.Background(), `300`, `111,333`, 0); err != nil {
 		t.Error(err)
 	}
 
-	data, err := index.Read(`111`)
+	if err := str.Delete(context.Background(), `200`); err != nil {
+		t.Error(err)
+	}
+
+	if err := str.Delete(context.Background(), `300`); err != nil {
+		t.Error(err)
+	}
+
+	data, err := idx.Read(`111`)
 	if err != nil {
-		t.Error(data)
+		t.Error(err)
+	}
+
+	if len(data) > 0 {
+		t.Errorf(`want []string{300}, have %#v`, data)
+	}
+}
+
+func Test_indexedStore_Set(t *testing.T) {
+	idx := indexStoreIndexSetup(t)
+	str := indexStoreTestStoreSetup(t, idx)
+
+	if err := str.Set(context.Background(), `200`, `111,222`, 0); err != nil {
+		t.Error(err)
+	}
+
+	if err := str.Set(context.Background(), `300`, `111,333`, 0); err != nil {
+		t.Error(err)
+	}
+
+	data, err := idx.Read(`111`)
+	if err != nil {
+		t.Error(err)
 	}
 
 	var want []interface{}
@@ -79,28 +115,43 @@ func Test_indexedStore_Set(t *testing.T) {
 	}
 }
 
+func Test_indexedStore_Set_OldIndexedValues_ShouldGetDeleted(t *testing.T) {
+	idx := indexStoreIndexSetup(t)
+	str := indexStoreTestStoreSetup(t, idx)
+
+	if err := str.Set(context.Background(), `200`, `111,222`, 0); err != nil {
+		t.Error(err)
+	}
+
+	if err := str.Set(context.Background(), `200`, `222,333`, 0); err != nil {
+		t.Error(err)
+	}
+
+	data, err := idx.Read(`111`)
+	if err != nil {
+		t.Error(err)
+	}
+
+	if len(data) > 0 {
+		t.Fail()
+	}
+}
+
 func TestIndexedStore_GetIndexedRecords(t *testing.T) {
-	index := NewStringHashIndex(`foo`, func(key, val interface{}) (idx string) {
-		return strings.Split(val.(string), `,`)[0]
-	})
+	idx := indexStoreIndexSetup(t)
+	str := indexStoreTestStoreSetup(t, idx)
 
-	i := &indexedStore{
-		Store:   NewMockStore(`foo`, encoding.StringEncoder{}, encoding.StringEncoder{}, backend.NewMockBackend(`foo`, 0)),
-		indexes: map[string]Index{`foo`: index},
-		mu:      new(sync.Mutex),
-	}
-
-	if err := i.Set(context.Background(), `200`, `111,222`, 0); err != nil {
+	if err := str.Set(context.Background(), `200`, `111,222`, 0); err != nil {
 		t.Error(err)
 	}
-	if err := i.Set(context.Background(), `300`, `111,333`, 0); err != nil {
+	if err := str.Set(context.Background(), `300`, `111,333`, 0); err != nil {
 		t.Error(err)
 	}
-	if err := i.Set(context.Background(), `400`, `222,333`, 0); err != nil {
+	if err := str.Set(context.Background(), `400`, `222,333`, 0); err != nil {
 		t.Error(err)
 	}
 
-	itr, err := i.GetIndexedRecords(context.Background(), `foo`, `111`)
+	itr, err := str.GetIndexedRecords(context.Background(), `foo`, `111`)
 	if err != nil {
 		t.Error(err)
 	}

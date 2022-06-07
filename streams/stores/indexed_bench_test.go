@@ -8,7 +8,7 @@ import (
 )
 
 func BenchmarkHashIndex_Write(b *testing.B) {
-	index := NewStringHashIndex(`foo`, func(key, val interface{}) (idx string) {
+	index := NewIndex(`foo`, func(key, val interface{}) (idx interface{}) {
 		return strings.Split(val.(string), `,`)[0]
 	})
 	b.ResetTimer()
@@ -23,7 +23,7 @@ func BenchmarkHashIndex_Write(b *testing.B) {
 }
 
 func BenchmarkHashIndex_Read(b *testing.B) {
-	index := NewStringHashIndex(`foo`, func(key, val interface{}) (idx string) {
+	index := NewIndex(`foo`, func(key, val interface{}) (idx interface{}) {
 		return strings.Split(val.(string), `,`)[0]
 	})
 
