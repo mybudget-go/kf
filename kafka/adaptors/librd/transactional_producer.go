@@ -56,7 +56,6 @@ func (p *librdTxProducer) BeginTransaction() error {
 }
 
 func (p *librdTxProducer) CommitTransaction(ctx context.Context) error {
-	p.config.Logger.Info(`Sending msg count`, p.librdProducer.librdProducer.Len())
 	defer func(begin time.Time) {
 		p.metrics.transactions.commitLatency.Observe(float64(time.Since(begin).Microseconds()), nil)
 	}(time.Now())

@@ -44,6 +44,9 @@ func (s *index) Write(key, value interface{}) error {
 }
 
 func (s *index) ValueIndexed(index, value interface{}) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	_, ok := s.indexes[index]
 	if !ok {
 		return false, nil
