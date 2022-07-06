@@ -40,7 +40,7 @@ func (r *streamConsumerInstance) OnPartitionRevoked(ctx context.Context, session
 }
 
 func (r *streamConsumerInstance) OnPartitionAssigned(_ context.Context, session kafka.GroupSession) error {
-	r.currentAssignment = r.generation.FindMappingsByTPs(session.Assignment().TPs()...)
+	r.currentAssignment = r.generation.Assign(session.Assignment().TPs()...)
 	r.logger.Info(fmt.Sprintf("Assigning tasks -> \n%s", r.currentAssignment))
 	wg := sync.WaitGroup{}
 	wg.Add(len(r.currentAssignment))

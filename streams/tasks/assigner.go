@@ -61,16 +61,28 @@ func (g TaskGeneration) FindMappingByTP(partition kafka.TopicPartition) *TaskMap
 	return nil
 }
 
-func (g *TaskGeneration) FindMappingsByTPs(partitions ...kafka.TopicPartition) TaskAssignment {
+func (g *TaskGeneration) Assign(assignment ...kafka.TopicPartition) TaskAssignment {
 	var mappings TaskAssignment
 	added := map[TaskID]struct{}{}
-	for _, partition := range partitions {
+	assignmentMap := map[string]struct{}{}
+	for _, partition := range assignment {
+		assignmentMap[partition.String()] = struct{}{}
 		for _, mp := range g.mappings {
 			for _, tp := range mp.TPs {
 				if _, ok := added[mp.id]; !ok && tp.String() == partition.String() {
 					mappings = append(mappings, mp)
 					added[mp.id] = struct{}{}
 				}
+			}
+		}
+	}
+
+	// Check if the consumer assignment matching the generated task list
+	for _, mapping := range mappings {
+		for _, tp := range mapping.TPs {
+			if _, ok := assignmentMap[tp.String()]; !ok {
+				panic(fmt.Sprintf(`invalid assignment: consumer assignment (%s) doesn't match 
+				the Generation (%s)`, assignment, mapping.TPs))
 			}
 		}
 	}

@@ -45,7 +45,7 @@ func (t *KSubTopology) Producer() kafka.Producer {
 func (t *KSubTopology) Store(name string) topology.StateStore {
 	stor, ok := t.stores[name]
 	if !ok {
-		panic(fmt.Sprintf(`store [%s], does not exist`, name))
+		panic(fmt.Sprintf(`%s - store [%s], does not exist`, t.id, name))
 	}
 
 	return stor
@@ -53,7 +53,7 @@ func (t *KSubTopology) Store(name string) topology.StateStore {
 
 func (t *KSubTopology) AddStore(store topology.LoggableStateStore) {
 	if _, ok := t.stores[store.Name()]; ok {
-		panic(fmt.Sprintf(`store [%s], already exists`, store.Name()))
+		panic(fmt.Sprintf(`%s -  store [%s], already exists, SubTopology:%s`, t.id, store.Name()))
 	}
 
 	t.stores[store.Name()] = store
