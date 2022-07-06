@@ -44,14 +44,15 @@ func (r *streamConsumer) Run(topologyBuilder topology.Topology) error {
 	}
 
 	// Generate task list
-	generation := new(tasks.Assigner).Generate(tps, topologyBuilder)
-	r.logger.Info(fmt.Sprintf("Task assignment generated -> \n%s", generation))
+	generation := new(tasks.Generator).Generate(tps, topologyBuilder)
+	r.logger.Info(fmt.Sprintf("Task list generated -> \n%s", generation.Mappings()))
 
 	wg := &sync.WaitGroup{}
 	for i := 1; i <= r.consumerCount; i++ {
 		logger := r.logger.NewLog(log.Prefixed(fmt.Sprintf(`StreamConsumer#%d`, i)))
 		consumer, err := r.groupConsumer(func(config *kafka.GroupConsumerConfig) {
 			config.Logger = logger
+			config.Id = fmt.Sprintf(`consumer#%d`, i)
 		})
 		if err != nil {
 			return err

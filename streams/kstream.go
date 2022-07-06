@@ -551,7 +551,7 @@ func (k *kStream) Repartition(topic string, opts ...RepartitionOpt) Stream {
 		ProduceWithValEncoder(k.valEncoder()),
 	)
 
-	// if marked for repartition apply those options as well
+	// If marked for repartition apply those options as well
 	if k.markedForRepartition() {
 		opts = append(k.repartitionOpts.Apply(), opts...)
 	}
@@ -589,6 +589,23 @@ func (k *kStream) Repartition(topic string, opts ...RepartitionOpt) Stream {
 	through.rePartitioned = true
 
 	return through
+}
+
+func (k *kStream) AddStateStore(name string, keyEnc, valEnc encoding.Encoder, options ...state_stores.StoreBuilderOption) {
+	opts := append([]state_stores.StoreBuilderOption{
+		state_stores.StoreBuilderWithStoreOption(stores.WithBackendBuilder(k.builder.defaultBuilders.Backend)),
+		state_stores.WithChangelogOptions(
+			state_stores.ChangelogWithTopicTopicNameFormatter(k.builder.config.ChangelogTopicNameFormatter),
+			state_stores.ChangelogWithTopicReplicaCount(k.builder.config.InternalTopicsDefaultReplicaCount),
+		),
+	}, options...)
+
+	k.stpBuilder.AddStore(state_stores.NewStoreBuilder(
+		name,
+		keyEnc,
+		valEnc,
+		opts...,
+	))
 }
 
 func (k *kStream) topology() topology.SubTopologyBuilder {

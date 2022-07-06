@@ -142,9 +142,16 @@ func (k *kTopologyBuilder) setup(ctx topology.BuilderContext) error {
 		}
 	}
 
-	tpInfo, err := ctx.Admin().FetchInfo(topics)
-	if err != nil {
-		return errors.Wrapf(err, `Metadata fetch failed. Topics %+v`, topics)
+	var tpInfo map[string]*kafka.Topic
+
+	// If topology has only GlobalTables there's nothing to check
+	if len(topics) > 0 {
+		info, err := ctx.Admin().FetchInfo(topics)
+		if err != nil {
+			return errors.Wrapf(err, `Metadata fetch failed. Topics %+v`, topics)
+		}
+
+		tpInfo = info
 	}
 
 	for _, info := range tpInfo {
@@ -167,12 +174,12 @@ func (k *kTopologyBuilder) setup(ctx topology.BuilderContext) error {
 			case topology.Source:
 				// Marked as AutoCreate has to be excluded(yet to be created)
 				if topicMap[s.Topic()].AutoCreate {
+					// In each sub topology if the topology contains multiple topics they have to be co-partitioned
+					// including auto generated(eg: changelogs, repartitioned) topics.
+					// In this case if nominated-source-topic(RePartitionedAs) partition count is greater than
+					// current autoMaxPartitions then the autoMaxPartitions has to be adjusted to match the source
+					// topic
 					if s.RePartitionedAs() != nil {
-						// In each sub topology if the topology contains multiple topics they have to be co-partitioned
-						// including auto generated(eg: changelogs, repartitioned) topics.
-						// In this case if nominated-source-topic(RePartitionedAs) partition count is greater than
-						// current autoMaxPartitions then the autoMaxPartitions has to be adjusted to match the source
-						// topic
 						if tpInfo[s.RePartitionedAs().Topic()].NumPartitions > autoMaxPartitions {
 							autoMaxPartitions = tpInfo[s.RePartitionedAs().Topic()].NumPartitions
 						}
@@ -181,7 +188,7 @@ func (k *kTopologyBuilder) setup(ctx topology.BuilderContext) error {
 					continue
 				}
 
-				// get the partition count
+				// Get the partition count
 				if tpInfo[s.Topic()].NumPartitions > maxPartitions {
 					maxPartitions = tpInfo[s.Topic()].NumPartitions
 				}
@@ -201,7 +208,7 @@ func (k *kTopologyBuilder) setup(ctx topology.BuilderContext) error {
 			}
 		}
 
-		// if maxPartitions is zero that means only the auto generated topics there in the sub-topology
+		// If maxPartitions is zero that means only the auto generated topics there in the sub-topology
 		if maxPartitions < 1 {
 			maxPartitions = autoMaxPartitions
 		}

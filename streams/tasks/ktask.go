@@ -186,7 +186,7 @@ func (t *task) process(record *Record) error {
 	_, _, _, err := t.subTopology.Source(record.Topic()).
 		Run(topology.NewRecordContext(record), record.Key(), record.Value())
 	if err != nil {
-		// If this is a kafka producer error return it(will be retried), otherwise ignore and exclude it form
+		// If this is a kafka producer error return it(will be retried), otherwise ignore and exclude it from
 		// re-processing(only the kafka errors can be retried here)
 		assert := func(err error) bool {
 			_, ok := err.(kafka.ProducerErr)

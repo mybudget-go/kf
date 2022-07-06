@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/gmbyapa/kstream/streams/encoding"
 	"github.com/gmbyapa/kstream/streams/processors"
+	"github.com/gmbyapa/kstream/streams/state_stores"
 	"github.com/gmbyapa/kstream/streams/topology"
 )
 
@@ -96,6 +97,7 @@ type Stream interface {
 	ToTable(store string, options ...TableOpt) Table
 	Merge(stream Stream) Stream
 	Repartition(topic string, opts ...RepartitionOpt) Stream
+	AddStateStore(name string, keyEnc, valEnc encoding.Encoder, options ...state_stores.StoreBuilderOption)
 	To(topic string, options ...KSinkOption)
 	StreamTopology
 	newChildStream(node topology.NodeBuilder, opts ...childStreamOption) *kStream

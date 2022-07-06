@@ -127,9 +127,14 @@ func (s *KSource) Setup(ctx topology.SubTopologySetupContext) error {
 			s.topic = s.topicNameFormatter(s.topic)(ctx, s.Id())
 		}
 
+		numOfPartitions := ctx.MaxPartitionCount()
+		if s.RePartitionedAs() != nil {
+			numOfPartitions = ctx.TopicMeta()[s.RePartitionedAs().Topic()].NumPartitions
+		}
+
 		topic := &kafka.Topic{
 			Name:              s.topic,
-			NumPartitions:     ctx.MaxPartitionCount(),
+			NumPartitions:     numOfPartitions,
 			ReplicationFactor: s.autoCreate.AutoTopicOpts.replicaCount,
 			ConfigEntries:     s.autoCreate.AutoTopicOpts.configEntries,
 		}

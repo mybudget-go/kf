@@ -46,6 +46,10 @@ func (conf *GroupConsumerConfig) setUp() error {
 		return errors.New(err.Error())
 	}
 
+	if err := conf.Librd.SetKey(`go.application.rebalance.enable`, true); err != nil {
+		return errors.New(err.Error())
+	}
+
 	if conf.EOSEnabled {
 		if err := conf.Librd.SetKey(`enable.auto.offset.store`, false); err != nil {
 			return errors.New(err.Error())

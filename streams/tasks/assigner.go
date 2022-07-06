@@ -9,7 +9,30 @@ import (
 	"strings"
 )
 
+type TaskGeneration struct {
+	mappings    TaskAssignment
+	mappingsMap map[string]*TaskMapping
+}
+
+func (g TaskGeneration) Mappings() TaskAssignment {
+	return g.mappings
+}
+
 type TaskAssignment []*TaskMapping
+
+func (a TaskAssignment) String() string {
+	// Sort by task ID
+	sort.Slice(a, func(i, j int) bool {
+		return a[i].id.(*taskId).id < a[j].id.(*taskId).id
+	})
+
+	var prnt string
+	for _, mp := range a {
+		prnt += fmt.Sprintf("%s - %s \n", mp.id, mp.TPs)
+	}
+
+	return prnt
+}
 
 type TaskMapping struct {
 	hash     string
@@ -26,8 +49,8 @@ func (a TaskMapping) SubTopologyBuilder() topology.SubTopologyBuilder {
 	return a.topology
 }
 
-func (a TaskAssignment) FindMappingByTP(partition kafka.TopicPartition) *TaskMapping {
-	for _, mp := range a {
+func (g TaskGeneration) FindMappingByTP(partition kafka.TopicPartition) *TaskMapping {
+	for _, mp := range g.mappings {
 		for _, tp := range mp.TPs {
 			if tp.String() == partition.String() {
 				return mp
@@ -38,11 +61,11 @@ func (a TaskAssignment) FindMappingByTP(partition kafka.TopicPartition) *TaskMap
 	return nil
 }
 
-func (a *TaskAssignment) FindMappingsByTPs(partitions ...kafka.TopicPartition) TaskAssignment {
-	var mappings []*TaskMapping
+func (g *TaskGeneration) FindMappingsByTPs(partitions ...kafka.TopicPartition) TaskAssignment {
+	var mappings TaskAssignment
 	added := map[TaskID]struct{}{}
 	for _, partition := range partitions {
-		for _, mp := range *a {
+		for _, mp := range g.mappings {
 			for _, tp := range mp.TPs {
 				if _, ok := added[mp.id]; !ok && tp.String() == partition.String() {
 					mappings = append(mappings, mp)
@@ -55,20 +78,11 @@ func (a *TaskAssignment) FindMappingsByTPs(partitions ...kafka.TopicPartition) T
 	return mappings
 }
 
-func (a TaskAssignment) String() string {
-	var prnt string
-	for _, mp := range a {
-		prnt += fmt.Sprintf("%s - %s \n", mp.id, mp.TPs)
-	}
-
-	return prnt
-}
-
-type Assigner struct{}
+type Generator struct{}
 
 // Generate generates the Task Assignment for a given TopicPartition combination by assigning
 // partitions to SubTopologyBuilders.
-func (a *Assigner) Generate(tps []kafka.TopicPartition, topologyBuilder topology.Topology) TaskAssignment {
+func (a *Generator) Generate(tps []kafka.TopicPartition, topologyBuilder topology.Topology) TaskGeneration {
 	// Create a map of sub topologies -> SubTopologyId:SubTopologyBuilder
 	subTopologies := make(map[topology.SubTopologyId]topology.SubTopologyBuilder)
 	for _, subTp := range topologyBuilder.StreamTopologies() {
@@ -132,7 +146,9 @@ func (a *Assigner) Generate(tps []kafka.TopicPartition, topologyBuilder topology
 		mp.hash = base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf(`%s#%d`, strings.Join(mp.topics, ``), mp.partition)))
 	}
 
-	var mappings []*TaskMapping
+	generation := TaskGeneration{
+		mappingsMap: map[string]*TaskMapping{},
+	}
 
 	// clean and map assignmentTpToTask to tasks
 	for _, mp := range subTopologyToPartition {
@@ -146,23 +162,24 @@ func (a *Assigner) Generate(tps []kafka.TopicPartition, topologyBuilder topology
 				Partition: mp.partition,
 			})
 		}
-		mappings = append(mappings, mapping)
+		generation.mappings = append(generation.mappings, mapping)
 	}
 
 	// Sort tasks by assigned hash
-	sort.Slice(mappings, func(i, j int) bool {
-		return mappings[i].hash < mappings[j].hash
+	sort.Slice(generation.mappings, func(i, j int) bool {
+		return generation.mappings[i].hash < generation.mappings[j].hash
 	})
 
 	// Assign task Ids
-	for i, mp := range mappings {
+	for i, mp := range generation.mappings {
 		mp.id = &taskId{
 			id:        i,
 			hash:      mp.hash,
 			prefix:    "Task",
 			partition: mp.TPs[0].Partition,
 		}
+		generation.mappingsMap[mp.id.UniqueID()] = mp
 	}
 
-	return mappings
+	return generation
 }
