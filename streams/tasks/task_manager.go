@@ -134,8 +134,8 @@ func (t *taskManager) addTask(ctx topology.BuilderContext, id TaskID, subTopolog
 		tsk.metrics.reporter = ctx.MetricsReporter().Reporter(metrics.ReporterConf{
 			Subsystem: "task_manager_task",
 			ConstLabels: map[string]string{
-				`type`:    `transactional_task`,
-				`task_id`: id.String(),
+				`task_type`: `transactional_task`,
+				`task_id`:   id.String(),
 			},
 		})
 		kTransactionalTask := &transactionalTask{
@@ -203,8 +203,8 @@ func (t *taskManager) addGlobalTask(ctx topology.BuilderContext, id TaskID, subT
 	tsk.metrics.reporter = ctx.MetricsReporter().Reporter(metrics.ReporterConf{
 		Subsystem: "task_manager_task",
 		ConstLabels: map[string]string{
-			`type`:    `task`,
-			`task_id`: id.String(),
+			`task_type`: `task`,
+			`task_id`:   id.String(),
 		},
 	})
 
