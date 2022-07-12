@@ -30,9 +30,6 @@ func NewTopologyVisualizer() Visualizer {
 		panic(err)
 	}
 
-	//if err := g.AddAttr(parent, `rankdir`, `LR`); err != nil {
-	//	panic(err)
-	//}
 	if err := g.AddAttr(parent, `size`, `"50,12"`); err != nil {
 		panic(err)
 	}
@@ -95,7 +92,7 @@ func (g *graphViz) Visualize() (string, error) {
 						return "", err
 					}
 				} else {
-					if err := g.addStateStore(str); err != nil {
+					if err := g.addStateStore(sbId, str); err != nil {
 						return "", err
 					}
 				}
@@ -117,7 +114,7 @@ func (g *graphViz) Visualize() (string, error) {
 						return "", err
 					}
 				} else {
-					if err := g.addStateStore(str); err != nil {
+					if err := g.addStateStore(sbId, str); err != nil {
 						return "", err
 					}
 				}
@@ -152,9 +149,7 @@ func (g *graphViz) Visualize() (string, error) {
 		}
 
 		for _, edge := range sbTp.Edges() {
-			parent := fmt.Sprintf(`"%d_%s"`, sbTp.Id().Id(), edge.Parent().Id())
-			node := fmt.Sprintf(`"%d_%s"`, sbTp.Id().Id(), edge.Node().Id())
-			if err := g.graph.AddEdge(parent, node, true, nil); err != nil {
+			if err := g.addEdge(sbTp, edge, nil); err != nil {
 				return ``, err
 			}
 		}
@@ -176,9 +171,26 @@ func (g *graphViz) addStore(stor string) error {
 	})
 }
 
-func (g *graphViz) addStateStore(stor string) error {
+func (g *graphViz) addEdge(subTp SubTopologyBuilder, edge Edge, attrs map[string]string) error {
+	parent := fmt.Sprintf(`"%d_%s"`, subTp.Id().Id(), edge.Parent().Id())
+	node := fmt.Sprintf(`"%d_%s"`, subTp.Id().Id(), edge.Node().Id())
+	// Check if nodes exists
+	if !g.graph.IsNode(parent) {
+		return errors.Errorf("Invalid parent, Sub Topology %s -> (%s)\nPlease refer the graph\n%s",
+			subTp.Id(), edge.Parent().Id(), g.graph.String())
+	}
+
+	if !g.graph.IsNode(node) {
+		return errors.Errorf("Invalid node, Sub Topology %s -> (%s)\nPlease refer the graph\n%s",
+			subTp.Id(), edge.Node().Id(), g.graph.String())
+	}
+
+	return g.graph.AddEdge(parent, node, true, nil)
+}
+
+func (g *graphViz) addStateStore(parent string, stor string) error {
 	strId := fmt.Sprintf(`"%s"`, stor)
-	return g.graph.AddNode(`root`, strId, map[string]string{
+	return g.graph.AddNode(parent, strId, map[string]string{
 		`label`: fmt.Sprintf(`"%s"`, stor),
 		`shape`: `cylinder`,
 	})

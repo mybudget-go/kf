@@ -187,7 +187,11 @@ func (a *kAdmin) ApplyConfigs() error {
 		topics = append(topics, tp)
 	}
 
-	return a.CreateTopics(topics)
+	if err := a.CreateTopics(topics); err != nil {
+		return errors.Wrap(err, `config apply failed`)
+	}
+
+	return nil
 }
 
 func (a *kAdmin) DeleteTopics(topics []string) error {

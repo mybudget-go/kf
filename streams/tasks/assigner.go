@@ -81,8 +81,8 @@ func (g *TaskGeneration) Assign(assignment ...kafka.TopicPartition) TaskAssignme
 	for _, mapping := range mappings {
 		for _, tp := range mapping.TPs {
 			if _, ok := assignmentMap[tp.String()]; !ok {
-				panic(fmt.Sprintf(`invalid assignment: consumer assignment (%s) doesn't match 
-				the Generation (%s)`, assignment, mapping.TPs))
+				panic(fmt.Sprintf("invalid assignment: consumer assignment \n%s \ndoesn't match the Generation \n%s",
+					assignment, mappings))
 			}
 		}
 	}

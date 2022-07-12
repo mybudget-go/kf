@@ -128,6 +128,7 @@ func (s *KSource) Setup(ctx topology.SubTopologySetupContext) error {
 		}
 
 		numOfPartitions := ctx.MaxPartitionCount()
+
 		if s.RePartitionedAs() != nil {
 			numOfPartitions = ctx.TopicMeta()[s.RePartitionedAs().Topic()].NumPartitions
 		}

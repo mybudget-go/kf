@@ -65,13 +65,13 @@ func (k *kTopologyBuilder) StateStores() map[string]topology.LoggableStoreBuilde
 func (k *kTopologyBuilder) Build(ctx topology.BuilderContext) (topology.Topology, error) {
 	// Setup SubTopologies
 	if err := k.setup(ctx); err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, `TopologyBuilder setup failed`)
 	}
 
 	// Tell admin client to create all the topics marked by changeslogs and source nodes
 	k.logger.Info(`Creating internal topics`)
 	if err := ctx.Admin().ApplyConfigs(); err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, `config apply failed`)
 	}
 
 	return &kTopology{topologyBuilder: k}, nil

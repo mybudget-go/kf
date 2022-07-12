@@ -208,9 +208,8 @@ func (k *kStream) Each(eachFunc processors.EachFunc, opts ...StreamOption) Strea
 
 // SelectKey select change the key of the stream by selecting a key form its value. Useful when joining streams with
 // foreign keys
-// Note: Applying Joins or other stateful operations after this must provide repartition options
+// Note: Applying Joins or other stateful operations after this will mark the stream for repartitioning
 func (k *kStream) SelectKey(selectKeyFunc processors.SelectKeyFunc, opts ...StreamOption) Stream {
-	// create repartition
 	node := &processors.KeySelector{
 		SelectKeyFunc: selectKeyFunc,
 	}
@@ -223,7 +222,6 @@ func (k *kStream) SelectKey(selectKeyFunc processors.SelectKeyFunc, opts ...Stre
 	}
 
 	return k.newChildStream(node).maybeRepartitioned(
-		//RePartitionAs(fmt.Sprintf(`%s-%s`, k.kSource.Topic(), node.NodeName())),
 		rePartitionedWithSourceOpts(
 			ConsumeWithAutoTopicCreateEnabled(
 				PartitionAs(k.kSource))))
@@ -403,7 +401,7 @@ func (k *kStream) LeftJoinTable(table Table, valMapper processors.JoinValueMappe
 }
 
 func (k *kStream) joinTable(table Table, valMapper processors.JoinValueMapper, typ processors.JoinerType, opts ...JoinOption) Stream {
-	// Mark sources for co partitioning
+	// Mark source for co partitioning
 	k.source().ShouldCoPartitionedWith(table.source())
 
 	joinOpts := new(JoinOptions)
