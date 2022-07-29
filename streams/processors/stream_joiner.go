@@ -29,6 +29,7 @@ type StreamJoiner struct {
 	OtherStoreName    string
 	ValueMapper       JoinValueMapper
 	ValueLookupFunc   ValueLookupFunc
+	OtherSideFilters  []FilterFunc
 
 	otherStore stores.Store
 	topology.DefaultNode
@@ -56,6 +57,7 @@ func (sj *StreamJoiner) Build(_ topology.SubTopologyContext) (topology.Node, err
 		OtherStoreName:    sj.OtherStoreName,
 		ValueMapper:       sj.ValueMapper,
 		ValueLookupFunc:   lookupFunc,
+		OtherSideFilters:  sj.OtherSideFilters,
 
 		DefaultNode: sj.DefaultNode,
 	}, nil
@@ -65,10 +67,30 @@ func (sj *StreamJoiner) Run(ctx context.Context, kIn, vIn interface{}) (kOut, vO
 	// Get the other side value/values
 	value, err := sj.ValueLookupFunc(ctx, sj.otherStore, kIn, vIn)
 	if err != nil {
-		return nil, nil, false, sj.WrapErrWith(err, `RightTable read failed`)
+		return sj.IgnoreAndWrapErrWith(err, `RightTable read failed`)
+	}
+
+	if value == nil {
+		goto CONT
+	}
+
+	// apply filters
+	for _, f := range sj.OtherSideFilters {
+		ok, err := f(ctx, kIn, value)
+		if err != nil {
+			return sj.IgnoreWithError(err)
+		}
+
+		// if any filter returns false, stop evaluating others and make value nil
+		// (so it will be ignored accordingly, eg: inner join)
+		if !ok {
+			value = nil
+			break
+		}
 	}
 
 	// If other side is required (eg: inner join, or the left side of a left join) then just ignore
+CONT:
 	if value == nil && sj.OtherSideRequired {
 		return sj.Ignore()
 	}
@@ -83,7 +105,7 @@ func (sj *StreamJoiner) Run(ctx context.Context, kIn, vIn interface{}) (kOut, vO
 
 	joinedValue, err := sj.ValueMapper(ctx, l, r)
 	if err != nil {
-		return nil, nil, false, sj.WrapErrWith(err, `value mapper failed`)
+		return sj.IgnoreAndWrapErrWith(err, `value mapper failed`)
 	}
 
 	return sj.Forward(ctx, kIn, joinedValue, true)

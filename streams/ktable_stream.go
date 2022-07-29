@@ -10,29 +10,42 @@ type Table interface {
 	stateStore() topology.LoggableStoreBuilder
 	ToStream(opts ...StreamOption) Stream
 	Filter(filter processors.FilterFunc, opts ...StreamOption) Table
+	Each(eachFunc processors.EachFunc, opts ...StreamOption) Table
 	Join(table Table, valMapper processors.JoinValueMapper, opts ...JoinOption) Table
 	JoinGlobalTable(table GlobalTable, keyMapper processors.KeyMapper, valMapper processors.JoinValueMapper, opts ...JoinOption) Table
 	LeftJoin(table Table, valMapper processors.JoinValueMapper, opts ...JoinOption) Table
 	RightJoin(table Table, valMapper processors.JoinValueMapper, opts ...JoinOption) Table
 	OuterJoin(table Table, valMapper processors.JoinValueMapper, opts ...JoinOption) Table
 	join(table Table, valMapper processors.JoinValueMapper, typ processors.JoinerType, opts ...JoinOption) Table
-	newChildTable(node topology.NodeBuilder, opts ...childStreamOption) *kTableStream
+	newChildTable(node topology.NodeBuilder, filter processors.FilterFunc, opts ...childStreamOption) *kTableStream
+	filters() []processors.FilterFunc
 }
 
 type kTableStream struct {
 	*kStream
-	store topology.LoggableStoreBuilder
+	store       topology.LoggableStoreBuilder
+	filterFuncs []processors.FilterFunc
 }
 
-func (tbl *kTableStream) newChildTable(node topology.NodeBuilder, opts ...childStreamOption) *kTableStream {
+func (tbl *kTableStream) newChildTable(node topology.NodeBuilder, filter processors.FilterFunc, opts ...childStreamOption) *kTableStream {
+	var filters []processors.FilterFunc
+	if filter != nil {
+		copy(filters, tbl.filterFuncs)
+	}
+
 	return &kTableStream{
-		kStream: tbl.newChildStream(node, opts...),
-		store:   tbl.store,
+		kStream:     tbl.newChildStream(node, opts...),
+		store:       tbl.store,
+		filterFuncs: filters,
 	}
 }
 
 func (tbl *kTableStream) stateStore() topology.LoggableStoreBuilder {
 	return tbl.store
+}
+
+func (tbl *kTableStream) filters() []processors.FilterFunc {
+	return tbl.filterFuncs
 }
 
 func (tbl *kTableStream) Join(table Table, valMapper processors.JoinValueMapper, opts ...JoinOption) Table {
@@ -66,10 +79,22 @@ func (tbl *kTableStream) Filter(filter processors.FilterFunc, opts ...StreamOpti
 	node := &processors.Filter{
 		FilterFunc: filter,
 	}
+
 	applyNodeOptions(node, opts)
 	tbl.topology().AddNodeWithEdge(tbl.node(), node)
 
-	return tbl.newChildTable(node)
+	return tbl.newChildTable(node, filter)
+}
+
+func (tbl *kTableStream) Each(eachFunc processors.EachFunc, opts ...StreamOption) Table {
+	node := &processors.Each{
+		EachFunc: eachFunc,
+	}
+
+	applyNodeOptions(node, opts)
+	tbl.topology().AddNodeWithEdge(tbl.node(), node)
+
+	return tbl.newChildTable(node, nil)
 }
 
 func (tbl *kTableStream) join(table Table, valMapper processors.JoinValueMapper, typ processors.JoinerType, opts ...JoinOption) Table {
@@ -85,6 +110,7 @@ func (tbl *kTableStream) join(table Table, valMapper processors.JoinValueMapper,
 		CurrentSide:       processors.LeftSide,
 		OtherSideRequired: typ == processors.RightJoin || typ == processors.InnerJoin,
 		OtherStoreName:    table.stateStore().Name(),
+		OtherSideFilters:  table.filters(),
 		ValueMapper:       valMapper,
 		ValueLookupFunc:   joinOpts.lookupFunc,
 	}
@@ -92,6 +118,7 @@ func (tbl *kTableStream) join(table Table, valMapper processors.JoinValueMapper,
 	rightJoiner := &processors.StreamJoiner{
 		CurrentSide:       processors.RightSide,
 		OtherSideRequired: typ == processors.LeftJoin || typ == processors.InnerJoin,
+		OtherSideFilters:  tbl.filters(),
 		OtherStoreName:    tbl.store.Name(),
 		ValueMapper:       valMapper,
 		//ValueLookupFunc:   joinOpts.lookupFunc,
@@ -113,5 +140,5 @@ func (tbl *kTableStream) join(table Table, valMapper processors.JoinValueMapper,
 	tbl.topology().AddNodeWithEdge(leftJoiner, merger)
 	tbl.topology().AddNodeWithEdge(rightJoiner, merger)
 
-	return tbl.newChildTable(merger)
+	return tbl.newChildTable(merger, nil)
 }
