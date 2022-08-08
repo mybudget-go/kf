@@ -59,6 +59,7 @@ type TaskID interface {
 	// UniqueID is uniques withing the task manager and
 	UniqueID() string
 	Partition() int32
+	Topics() string
 }
 
 type Task interface {
@@ -76,6 +77,7 @@ type taskId struct {
 	hash      string
 	prefix    string
 	partition int32
+	topics    string
 }
 
 func (t taskId) UniqueID() string {
@@ -84,6 +86,10 @@ func (t taskId) UniqueID() string {
 
 func (t taskId) String() string {
 	return fmt.Sprintf(`%s#%d`, t.prefix, t.id)
+}
+
+func (t taskId) Topics() string {
+	return t.topics
 }
 
 func (t taskId) Partition() int32 {
@@ -109,14 +115,16 @@ type task struct {
 
 	producer kafka.Producer
 	metrics  struct {
-		reporter                        metrics.Reporter
-		processLatencyMicroseconds      metrics.Observer
-		batchProcessLatencyMicroseconds metrics.Observer
+		reporter                              metrics.Reporter
+		initCount                             metrics.Counter
+		stateStoreRecoveryLatencyMilliseconds metrics.Observer
+		processLatencyMicroseconds            metrics.Observer
+		batchProcessLatencyMicroseconds       metrics.Observer
+		batchSize                             metrics.Gauge
 	}
 
 	shutDownOnce sync.Once
-
-	runGroup *async.RunGroup
+	runGroup     *async.RunGroup
 }
 
 func (t *task) ID() TaskID {
@@ -124,38 +132,57 @@ func (t *task) ID() TaskID {
 }
 
 func (t *task) Init(ctx topology.SubTopologyContext) error {
+	labels := map[string]string{`topics`: t.ID().Topics(), `partition`: fmt.Sprintf(`%d`, t.ID().Partition())}
+	t.metrics.stateStoreRecoveryLatencyMilliseconds = t.metrics.reporter.Observer(metrics.MetricConf{
+		Path:        `state_store_recovery_latency_milliseconds`,
+		ConstLabels: labels,
+		Labels:      []string{`store`},
+	})
+
 	t.metrics.processLatencyMicroseconds = t.metrics.reporter.Observer(metrics.MetricConf{
-		Path:   `process_latency_microseconds`,
-		Labels: []string{`topic_partition`},
+		Path:        `process_latency_microseconds`,
+		ConstLabels: labels,
 	})
 
 	t.metrics.batchProcessLatencyMicroseconds = t.metrics.reporter.Observer(metrics.MetricConf{
-		Path: `batch_process_latency_microseconds`,
+		Path:        `batch_process_latency_microseconds`,
+		ConstLabels: labels,
+	})
+
+	t.metrics.batchSize = t.metrics.reporter.Gauge(metrics.MetricConf{
+		Path:        `batch_size`,
+		ConstLabels: labels,
 	})
 
 	defer func() {
-		// Each StateStore instance in the task has to restored before the processing stats
+		// Each StateStore instance in the task has to be restored before the processing starts
 		for _, store := range t.subTopology.StateStores() {
-			stateStore := store
+			changelog := store
 			t.runGroup.Add(func(opts *async.Opts) error {
+				defer func(start time.Time) {
+					t.metrics.stateStoreRecoveryLatencyMilliseconds.Observe(float64(time.Since(start).Milliseconds()),
+						map[string]string{`store`: changelog.Name()})
+				}(time.Now())
+
 				stateSynced := make(chan struct{}, 1)
 				go func() {
 					defer async.LogPanicTrace(t.logger)
 
 					select {
-					// Once the state is synced we can close the ChangelogSyncer
+					// Once the state is synced we can stop the ChangelogSyncer
 					case <-stateSynced:
-						if err := stateStore.Stop(); err != nil {
+						if err := changelog.Stop(); err != nil {
 							panic(err.Error())
 						}
+					// Task has received the stop signal. RunGroup is stopping
 					case <-opts.Stopping():
-						if err := stateStore.Stop(); err != nil {
+						if err := changelog.Stop(); err != nil {
 							panic(err.Error())
 						}
 					}
 				}()
 
-				return stateStore.Sync(ctx, stateSynced)
+				return changelog.Sync(ctx, stateSynced)
 			})
 		}
 	}()
@@ -172,21 +199,19 @@ func (t *task) Ready() error {
 		return err
 	}
 
-	t.logger.Info(`State Recovered`)
+	t.logger.Info(`State Restored`)
 	return nil
 }
 
 func (t *task) process(record *Record) error {
 	defer func(since time.Time) {
-		t.metrics.processLatencyMicroseconds.Observe(float64(time.Since(since).Microseconds()), map[string]string{
-			`topic_partition`: fmt.Sprintf(`%s-%d`, record.Topic(), record.Partition()),
-		})
+		t.metrics.processLatencyMicroseconds.Observe(float64(time.Since(since).Microseconds()), nil)
 	}(time.Now())
 
 	_, _, _, err := t.subTopology.Source(record.Topic()).
 		Run(topology.NewRecordContext(record), record.Key(), record.Value())
 	if err != nil {
-		// If this is a kafka producer error return it(will be retried), otherwise ignore and exclude it from
+		// if this is a kafka producer error, return it(will be retried), otherwise ignore and exclude from
 		// re-processing(only the kafka errors can be retried here)
 		assert := func(err error) bool {
 			_, ok := err.(kafka.ProducerErr)
@@ -196,7 +221,7 @@ func (t *task) process(record *Record) error {
 			return producerErr
 		}
 
-		// Send record to DLQ handler and mark record as ignored,
+		// send record to DLQ handler and mark record as ignored,
 		// so it will be excluded from next batch
 		t.options.failedMessageHandler(err, record)
 		record.ignore = true

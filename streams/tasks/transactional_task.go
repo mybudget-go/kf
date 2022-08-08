@@ -25,6 +25,7 @@ func (t *transactionalTask) Init(ctx topology.SubTopologyContext) error {
 func (t *transactionalTask) onFlush(records []*Record) error {
 	defer func(since time.Time) {
 		t.metrics.batchProcessLatencyMicroseconds.Observe(float64(time.Since(since).Microseconds()), nil)
+		t.metrics.batchSize.Count(float64(len(records)), nil)
 	}(time.Now())
 
 	return t.processBatch(nil, records, 0)
@@ -33,7 +34,7 @@ func (t *transactionalTask) processBatch(previousErr error, records []*Record, i
 	itr++
 	// Purge the store cache before the processing starts.
 	// This will clear out any half processed states from state store caches.
-	// The batch will either process and committed or will fail as a whole.
+	// The batch will either be processed and committed or will fail as a whole.
 	for _, store := range t.subTopology.StateStores() {
 		store.Purge()
 	}

@@ -27,13 +27,14 @@ type groupConsumer struct {
 
 	shutdownOnce sync.Once
 
-	assignment map[string]chan kafka.Record
+	assignment *sync.Map
 
-	mu      sync.Mutex
-	metrics struct {
-		endToEndLatency  metrics.Observer
-		status           metrics.Gauge
-		rebalanceLatency metrics.Observer
+	metricsCollectorTicker *time.Ticker
+	metrics                struct {
+		consumerBufferCapacity metrics.Gauge
+		endToEndLatency        metrics.Observer
+		status                 metrics.Gauge
+		rebalanceLatency       metrics.Observer
 	}
 }
 
@@ -73,7 +74,7 @@ func NewGroupConsumer(config *GroupConsumerConfig) (kafka.GroupConsumer, error) 
 		config:         config,
 		consumerErrors: make(chan error, 1),
 		stopping:       make(chan stopSignal, 1),
-		assignment:     map[string]chan kafka.Record{},
+		assignment:     new(sync.Map),
 	}, nil
 }
 
@@ -108,8 +109,14 @@ func (g *groupConsumer) Errors() <-chan error {
 
 func (g *groupConsumer) initMetrics() {
 	reporter := g.config.MetricsReporter.Reporter(metrics.ReporterConf{Subsystem: `kstream_group_consumer`})
+	g.metricsCollectorTicker = time.NewTicker(5 * time.Second)
 	g.metrics.endToEndLatency = reporter.Observer(metrics.MetricConf{
 		Path:   "end_to_end_latency_microseconds",
+		Labels: []string{`topic_partition`},
+	})
+
+	g.metrics.consumerBufferCapacity = reporter.Gauge(metrics.MetricConf{
+		Path:   "consumer_buffer_capacity",
 		Labels: []string{`topic_partition`},
 	})
 
@@ -120,6 +127,8 @@ func (g *groupConsumer) initMetrics() {
 	g.metrics.status = reporter.Gauge(metrics.MetricConf{
 		Path: "rebalance_status",
 	})
+
+	g.reportConsumerBufferMetrics()
 }
 
 func (g *groupConsumer) consumeMessages() error {
@@ -158,15 +167,12 @@ MAIN:
 					Partition: e.TopicPartition.Partition,
 				}.String()
 
-				// TODO cleanup the code
-				g.mu.Lock()
-				assignment, ok := g.assignment[pId]
+				assigmnt, ok := g.assignment.Load(pId)
 				if !ok {
 					panic(`assignment does not exist`)
 				}
-				g.mu.Unlock()
 
-				assignment <- record
+				assigmnt.(chan kafka.Record) <- record
 
 			case librdKafka.PartitionEOF:
 				g.config.Logger.Info(fmt.Sprintf(`Partition end %s`, e))
@@ -247,9 +253,7 @@ func (g *groupConsumer) assign(c *librdKafka.Consumer, partitions []librdKafka.T
 	for _, tp := range session.Assignment().TPs() {
 		messageChan := make(chan kafka.Record, 10) //TODO make this configurable
 
-		g.mu.Lock()
-		g.assignment[tp.String()] = messageChan
-		g.mu.Unlock()
+		g.assignment.Store(tp.String(), messageChan)
 
 		go func(tp kafka.TopicPartition) {
 			claim := &partitionClaim{
@@ -316,10 +320,8 @@ func (g *groupConsumer) revoke(c *librdKafka.Consumer, partitions []librdKafka.T
 	}
 
 	for _, pt := range pts {
-		g.mu.Lock()
-		close(g.assignment[pt.String()])
-		delete(g.assignment, pt.String())
-		g.mu.Unlock()
+		ch, _ := g.assignment.LoadAndDelete(pt.String())
+		close(ch.(chan kafka.Record))
 	}
 
 	g.config.Logger.Info(fmt.Sprintf(`Partitions %s revoked`, assign.TPs()))
@@ -355,4 +357,21 @@ func (g *groupConsumer) printLogs() {
 			logger.Debug(lg.String())
 		}
 	}
+}
+
+func (g *groupConsumer) reportConsumerBufferMetrics() {
+	go func() {
+		for range g.metricsCollectorTicker.C {
+			g.assignment.Range(func(key, value interface{}) bool {
+				ch := value.(chan kafka.Record)
+				size := float64(len(ch)) * 100 / float64(cap(ch))
+				g.metrics.consumerBufferCapacity.Count(size, map[string]string{
+					`topic_partition`: key.(string),
+				})
+
+				return true
+			})
+		}
+	}()
+
 }

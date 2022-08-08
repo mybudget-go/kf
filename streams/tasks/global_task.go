@@ -5,7 +5,6 @@ import (
 	"github.com/gmbyapa/kstream/kafka"
 	"github.com/gmbyapa/kstream/pkg/async"
 	"github.com/gmbyapa/kstream/streams/topology"
-	"github.com/tryfix/metrics"
 )
 
 type globalTask struct {
@@ -13,11 +12,6 @@ type globalTask struct {
 }
 
 func (t *globalTask) Init(ctx topology.SubTopologyContext) error {
-	t.metrics.processLatencyMicroseconds = t.metrics.reporter.Observer(metrics.MetricConf{
-		Path:   `process_latency_microseconds`,
-		Labels: []string{`topic_partition`},
-	})
-
 	defer func() {
 		for _, store := range t.subTopology.StateStores() {
 			stateStore := store

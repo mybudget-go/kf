@@ -189,6 +189,7 @@ func (a *Generator) Generate(tps []kafka.TopicPartition, topologyBuilder topolog
 			hash:      mp.hash,
 			prefix:    "Task",
 			partition: mp.TPs[0].Partition,
+			topics:    fmt.Sprint(mp.TPs),
 		}
 		generation.mappingsMap[mp.id.UniqueID()] = mp
 	}

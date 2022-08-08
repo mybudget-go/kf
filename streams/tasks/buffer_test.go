@@ -3,6 +3,7 @@ package tasks
 import (
 	"github.com/gmbyapa/kstream/kafka/mocks"
 	logger "github.com/tryfix/log"
+	"github.com/tryfix/metrics"
 	"testing"
 	"time"
 )
@@ -17,7 +18,7 @@ func TestBuffer_Add(t *testing.T) {
 	b := newBuffer(bufferConf, func(records []*Record) error {
 		i = len(records)
 		return nil
-	}, logger.NewNoopLogger())
+	}, logger.NewNoopLogger(), metrics.NoopReporter())
 
 	for i := 0; i < 10; i++ {
 		if err := b.Add(&Record{Record: &mocks.Record{}}); err != nil {
@@ -37,7 +38,7 @@ func TestBuffer_Flush(t *testing.T) {
 	b := newBuffer(bufferConf, func(records []*Record) error {
 		i = len(records)
 		return nil
-	}, logger.NewNoopLogger())
+	}, logger.NewNoopLogger(), metrics.NoopReporter())
 
 	for i := 0; i < 10; i++ {
 		if err := b.Add(&Record{Record: &mocks.Record{}}); err != nil {
@@ -59,7 +60,7 @@ func TestBuffer_Flush_When_Closing(t *testing.T) {
 	b := newBuffer(bufferConf, func(records []*Record) error {
 		i = len(records)
 		return nil
-	}, logger.NewNoopLogger())
+	}, logger.NewNoopLogger(), metrics.NoopReporter())
 
 	for i := 0; i < 10; i++ {
 		if err := b.Add(&Record{Record: &mocks.Record{}}); err != nil {
