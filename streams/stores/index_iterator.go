@@ -1,7 +1,5 @@
 package stores
 
-import "github.com/gmbyapa/kstream/backend"
-
 type keyVal struct {
 	key, val interface{}
 }
@@ -69,6 +67,6 @@ func (i *indexIterator) Error() error {
 	return nil
 }
 
-func (i *indexIterator) BackendIterator() backend.Iterator {
-	panic(``)
-}
+//func (i *indexIterator) BackendIterator() backend.Iterator {
+//	panic(``)
+//}

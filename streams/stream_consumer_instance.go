@@ -23,7 +23,7 @@ type streamConsumerInstance struct {
 }
 
 func (r *streamConsumerInstance) OnPartitionRevoked(ctx context.Context, session kafka.GroupSession) error {
-	r.logger.Error(fmt.Sprintf("Removing tasks -> \n%s", r.currentAssignment))
+	r.logger.Info(fmt.Sprintf("Removing tasks -> \n%s", r.currentAssignment))
 	wg := sync.WaitGroup{}
 	wg.Add(len(r.currentAssignment))
 	for _, mapping := range r.currentAssignment {

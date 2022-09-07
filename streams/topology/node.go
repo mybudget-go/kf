@@ -70,10 +70,11 @@ type InitableNode interface {
 	Init(ctx NodeContext) error
 }
 
-type DestroyableNode interface {
+type CloseableNode interface {
 	Node
-	// Destroy is called once the Node is build and before starts processing messages
-	Destroy() error
+	// Close is called once the message processing stops
+	// Please refer SubTopology.Close()
+	Close() error
 }
 
 type StateType string

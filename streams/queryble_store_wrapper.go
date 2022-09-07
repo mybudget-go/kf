@@ -2,7 +2,6 @@ package streams
 
 import (
 	"context"
-	"github.com/gmbyapa/kstream/backend"
 	"github.com/gmbyapa/kstream/streams/encoding"
 	"github.com/gmbyapa/kstream/streams/stores"
 	"github.com/gmbyapa/kstream/streams/tasks"
@@ -135,6 +134,6 @@ func (i *MultiStoreIterator) Error() error {
 	return i.iterators[i.current].Error()
 }
 
-func (i *MultiStoreIterator) BackendIterator() backend.Iterator {
-	return i.iterators[i.current].BackendIterator()
-}
+//func (i *MultiStoreIterator) BackendIterator() backend.Iterator {
+//	return i.iterators[i.current].BackendIterator()
+//}

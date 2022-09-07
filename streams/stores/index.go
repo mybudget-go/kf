@@ -8,7 +8,7 @@ import (
 
 type KeyMapper func(key, val interface{}) (idx string)
 
-var UnknownIndex = errors.New(`index does not exist`)
+var UnknownIndex = errors.New(`no values indexed for the key`)
 
 type index struct {
 	indexes map[interface{}]map[interface{}]struct{} // indexKey:recordKey:bool
@@ -33,6 +33,7 @@ func (s *index) String() string {
 func (s *index) Write(key, value interface{}) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	hashKey := s.mapper(key, value)
 	_, ok := s.indexes[hashKey]
 	if !ok {
@@ -63,6 +64,7 @@ func (s *index) Hash(key, val interface{}) (hash interface{}) {
 func (s *index) Delete(key, value interface{}) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	hashKey := s.mapper(key, value)
 	if _, ok := s.indexes[hashKey]; !ok {
 		return fmt.Errorf(`hashKey [%s] does not exist for [%s]`, hashKey, s.name)
@@ -75,6 +77,7 @@ func (s *index) Delete(key, value interface{}) error {
 func (s *index) Keys() []interface{} {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	var keys []interface{}
 
 	for key := range s.indexes {
@@ -87,6 +90,7 @@ func (s *index) Keys() []interface{} {
 func (s *index) Values() map[interface{}][]interface{} {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	values := make(map[interface{}][]interface{})
 
 	for idx, keys := range s.indexes {

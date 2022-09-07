@@ -35,9 +35,9 @@ func Named(name string) StreamOption {
 }
 
 // DisableRepartition disables stream repartitioning
-// even if it's marked for repartitioning. Usefull when
+// even if it's marked for repartitioning. Useful when
 // dealing with custom partitioners and joiners where
-// partition assignment doesn't rely on keys.
+// message partition doesn't rely on its key.
 func DisableRepartition() StreamOption {
 	return func(options *StreamOptions) {
 		options.disableRepartition = true

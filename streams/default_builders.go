@@ -12,15 +12,10 @@ import (
 )
 
 type DefaultBuilders struct {
-	//Producer kafka.ProducerBuilder
-	//GroupConsumer     kafka.GroupConsumerProvider
-	//PartitionConsumer kafka.ConsumerBuilder
 	Store        stores.Builder
 	IndexedStore stores.IndexedStoreBuilder
 	Backend      backend.Builder
-	//StateStore        stores.StoreBuilder
-	//OffsetManager     kafka.OffsetManagerBuilder
-	KafkaAdmin kafka.Admin
+	KafkaAdmin   kafka.Admin
 }
 
 func (dbs *DefaultBuilders) setup(configs *Config) {
@@ -55,72 +50,8 @@ func (dbs *DefaultBuilders) setup(configs *Config) {
 func (dbs *DefaultBuilders) configureAdaptors(typ string, configs *Config) {
 	switch typ {
 	case `librd`:
-		//dbs.Producer = librd3Adpt.NewProducerAdaptor(func(config *librd3Adpt.ProducerConfig) {
-		//	config.BootstrapServers = configs.BootstrapServers
-		//	config.Transactional.Enabled = configs.Processing.Guarantee == ExactlyOnce
-		//	config.Acks = configs.Producer.Acks
-		//	config.Logger = configs.Logger
-		//	config.MetricsReporter = configs.MetricsReporter
-		//
-		//	if err := config.Librd.SetKey(`go.events.channel.size`, 1000); err != nil {
-		//		panic(err)
-		//	}
-		//
-		//	if err := config.Librd.SetKey(`go.produce.channel.size`, 1000); err != nil {
-		//		panic(err)
-		//	}
-		//})
-
-		//var conf
-		//configK := kafka.NewPartitionConsumerConfig()
-		//configK.
-
-		//config := librd3Adpt.NewConsumerConfig()
-		//config.ConsumerConfig = configs.Consumer.ConsumerConfig
-		//dbs.PartitionConsumer = librd3Adpt.NewPartitionConsumerAdaptor(config)
-
-		//groupConfig := librd3Adpt.NewGroupConsumerConfig()
-		//dbs.GroupConsumer = librd3Adpt.NewGroupConsumerAdaptor(groupConfig).NewBuilder(configs.Consumer)
-
 		dbs.KafkaAdmin = saramaAdpt.NewAdmin(configs.BootstrapServers,
 			saramaAdpt.WithLogger(configs.Logger),
 		)
-
-		//case `franz-go`:
-		//	dbs.Producer = franzgoAdpt.NewProducerAdaptor(func() *franzgoAdpt.ProducerConfig {
-		//		config := franzgoAdpt.NewProducerConfig()
-		//		config.BootstrapServers = configs.BootstrapServers
-		//		config.Transactional.Enabled = configs.Processing.Guarantee == ExactlyOnce
-		//		config.Acks = configs.Producer.RequiredAcks
-		//		config.Logger = configs.Logger
-		//		config.MetricsReporter = configs.MetricsReporter
-		//
-		//		return config
-		//	})
-		//
-		//	dbs.GroupConsumer = franzgoAdpt.NewGroupConsumerAdaptor(func(config *franzgoAdpt.ConsumerConfig) {
-		//		config.BootstrapServers = configs.BootstrapServers
-		//		config.Id = configs.ApplicationId
-		//		config.GroupId = configs.ApplicationId
-		//		config.IsolationLevel = configs.Consumer.IsolationLevel
-		//
-		//		if configs.Processing.Guarantee == ExactlyOnce {
-		//			config.IsolationLevel = kafka.ReadCommitted
-		//		}
-		//
-		//		config.Logger = configs.Logger
-		//		config.MetricsReporter = configs.MetricsReporter
-		//	})
-		//
-		//	dbs.PartitionConsumer = franzgoAdpt.NewPartitionConsumerAdaptor(func(config *franzgoAdpt.PartitionConsumerConfig) {
-		//		config.Id = configs.ApplicationId
-		//		config.BootstrapServers = configs.BootstrapServers
-		//		config.Logger = configs.Logger
-		//		config.MetricsReporter = configs.MetricsReporter
-		//	})
-		//
-		//	dbs.KafkaAdmin = saramaAdpt.NewAdmin(configs.BootstrapServers,
-		//		saramaAdpt.WithLogger(configs.Logger),
-		//	)
 	}
 }

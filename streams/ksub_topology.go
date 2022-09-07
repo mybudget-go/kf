@@ -81,10 +81,10 @@ func (t *KSubTopology) Init(ctx topology.SubTopologyContext) error {
 	return nil
 }
 
-func (t *KSubTopology) Destroy() error {
+func (t *KSubTopology) Close() error {
 	for _, nd := range t.nodes {
-		if ndInt, ok := nd.(topology.DestroyableNode); ok {
-			if err := ndInt.Destroy(); err != nil {
+		if closable, ok := nd.(topology.CloseableNode); ok {
+			if err := closable.Close(); err != nil {
 				return err
 			}
 		}

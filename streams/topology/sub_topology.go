@@ -6,7 +6,7 @@ type SubTopology interface {
 	Source(topic string) Source
 	Nodes() []Node
 	Init(ctx SubTopologyContext) error
-	Destroy() error
+	Close() error
 	Store(name string) StateStore
 	StateStores() map[string]StateStore
 }

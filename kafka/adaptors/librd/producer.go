@@ -203,8 +203,7 @@ func (p *librdProducer) ProduceSync(ctx context.Context, message kafka.Record) (
 	}
 
 	p.metrics.produceLatency.Observe(float64(time.Since(kMessage.Timestamp).Nanoseconds()/1e3), map[string]string{
-		`topic`:     *dmSg.TopicPartition.Topic,
-		`partition`: fmt.Sprint(dmSg.TopicPartition.Partition),
+		`topic`: *dmSg.TopicPartition.Topic,
 	})
 
 	p.config.Logger.DebugContext(ctx, fmt.Sprintf("Delivered message to topic %s[%d]@%d",

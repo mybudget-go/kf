@@ -271,6 +271,11 @@ MAIN:
 }
 
 func (t *task) Stop() error {
+	// close sub topology
+	if err := t.subTopology.Close(); err != nil {
+		panic(fmt.Sprintf(`sub-topology close error due to %s`, err))
+	}
+
 	t.shutdown(nil)
 	return nil
 }
@@ -298,7 +303,7 @@ func (t *task) shutdown(err error) {
 		}
 
 		// TODO complete this
-		// if err := t.subTopology.Destroy(); err != nil{}
+		// if err := t.subTopology.Close(); err != nil{}
 
 		// Close all the state stores
 		wg := &sync.WaitGroup{}

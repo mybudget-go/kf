@@ -1,6 +1,6 @@
 package state_stores
 
-// Cache is a simple key value cache used to keep data before flushing to state stores.
+// Cache is a simple key value cache used to keep data changes before flushing to state stores.
 type Cache struct {
 	records map[string][]byte
 }

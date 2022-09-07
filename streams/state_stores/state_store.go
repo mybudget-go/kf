@@ -3,6 +3,7 @@ package state_stores
 import (
 	"context"
 	"fmt"
+	"github.com/gmbyapa/kstream/backend/memory"
 	"time"
 
 	"github.com/gmbyapa/kstream/pkg/errors"
@@ -49,6 +50,55 @@ func (str *StateStore) Get(ctx context.Context, key interface{}) (interface{}, e
 	}
 
 	return str.Store.Get(ctx, key)
+}
+
+func (str *StateStore) Iterator(ctx context.Context) (stores.Iterator, error) {
+	itr, err := str.Store.Iterator(ctx)
+	// TODO handle error
+	if err != nil {
+		return nil, err
+	}
+
+	records := make(map[string][]byte)
+	for itr.SeekToFirst(); itr.Valid(); itr.Next() {
+		k, err := itr.Key()
+		if err != nil {
+			return nil, err
+		}
+
+		keyByt, err := str.KeyEncoder().Encode(k)
+		if err != nil {
+			return nil, err
+		}
+
+		v, err := itr.Value()
+		if err != nil {
+			return nil, err
+		}
+
+		valByt, err := str.ValEncoder().Encode(v)
+		if err != nil {
+			return nil, err
+		}
+
+		records[string(keyByt)] = valByt
+	}
+
+	for cachedK, cachedV := range str.cache.records {
+		records[cachedK] = cachedV
+	}
+
+	recsArr := make([]memory.ByteRecord, len(records))
+	var i int
+	for key, val := range records {
+		recsArr[i] = memory.ByteRecord{
+			Key:   []byte(key),
+			Value: val,
+		}
+		i++
+	}
+
+	return stores.NewIterator(memory.NewMemoryIterator(recsArr), str.KeyEncoder(), str.ValEncoder()), nil
 }
 
 func (str *StateStore) Delete(_ context.Context, key interface{}) error {

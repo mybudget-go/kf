@@ -4,6 +4,7 @@ import (
 	"context"
 	nativeErrors "errors"
 	"fmt"
+	"github.com/gmbyapa/kstream/pkg/errors"
 	"github.com/gmbyapa/kstream/streams/encoding"
 
 	"sync"
@@ -54,12 +55,11 @@ func NewIndexedStore(name string, keyEncoder, valEncoder encoding.Encoder, index
 }
 
 func (i *indexedStore) Set(ctx context.Context, key, val interface{}, expiry time.Duration) error {
-	// set indexes
 	i.mu.Lock()
 	defer i.mu.Unlock()
 
 	if err := UpdateIndexes(ctx, i, key, val); err != nil {
-		return err // TODO wrap error
+		return errors.Wrapf(err, `store %s indexes update failed`, i.Name())
 	}
 
 	return i.Store.Set(ctx, key, val, expiry)
@@ -68,8 +68,9 @@ func (i *indexedStore) Set(ctx context.Context, key, val interface{}, expiry tim
 func (i *indexedStore) Delete(ctx context.Context, key interface{}) error {
 	i.mu.Lock()
 	defer i.mu.Unlock()
+
 	if err := DeleteIndexes(ctx, i, key); err != nil {
-		return err // TODO wrap error
+		return errors.Wrapf(err, `store %s indexes delete failed`, i.Name())
 	}
 
 	return i.Store.Delete(ctx, key)
@@ -78,6 +79,7 @@ func (i *indexedStore) Delete(ctx context.Context, key interface{}) error {
 func (i *indexedStore) GetIndex(_ context.Context, name string) (Index, error) {
 	i.mu.Lock()
 	defer i.mu.Unlock()
+
 	idx, ok := i.indexes[name]
 	if !ok {
 		return nil, fmt.Errorf(`associate [%s] does not exist`, name)
@@ -101,29 +103,28 @@ func (i *indexedStore) GetIndexedRecords(ctx context.Context, indexName string, 
 	i.mu.Unlock()
 
 	if !ok {
-		return nil, fmt.Errorf(`associate [%s] does not exist`, indexName)
+		return nil, fmt.Errorf(`index [%s] does not exist`, indexName)
 	}
 
-	itr := &indexIterator{
-		currentKey: 0,
-		valid:      false,
-	}
+	itr := &indexIterator{}
 
-	indexes, err := idx.Read(key)
+	indexedKeys, err := idx.Read(key)
 	if err != nil {
 		if nativeErrors.Is(err, UnknownIndex) {
 			return itr, nil
 		}
+
 		return nil, err
 	}
 
-	for _, index := range indexes {
-		record, err := i.Get(ctx, index)
+	for _, indexedKey := range indexedKeys {
+		record, err := i.Get(ctx, indexedKey)
 		if err != nil {
 			return nil, err
 		}
+
 		itr.records = append(itr.records, &keyVal{
-			key: index,
+			key: idx,
 			val: record,
 		})
 	}

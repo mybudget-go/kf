@@ -8,7 +8,6 @@ import (
 type Iterator interface {
 	SeekToFirst()
 	SeekToLast()
-	//Seek(key interface{}) error
 	Next()
 	Prev()
 	Close()
@@ -16,13 +15,21 @@ type Iterator interface {
 	Value() (interface{}, error)
 	Valid() bool
 	Error() error
-	BackendIterator() backend.Iterator
+	//BackendIterator() backend.Iterator
 }
 
 type iterator struct {
 	i          backend.Iterator
 	keyEncoder encoding.Encoder
 	valEncoder encoding.Encoder
+}
+
+func NewIterator(backendItr backend.Iterator, keyEnc, valEnc encoding.Encoder) Iterator {
+	return &iterator{
+		i:          backendItr,
+		keyEncoder: keyEnc,
+		valEncoder: valEnc,
+	}
 }
 
 func (i *iterator) SeekToFirst() {

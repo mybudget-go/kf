@@ -110,14 +110,17 @@ func (g *groupConsumer) Errors() <-chan error {
 func (g *groupConsumer) initMetrics() {
 	reporter := g.config.MetricsReporter.Reporter(metrics.ReporterConf{Subsystem: `kstream_group_consumer`})
 	g.metricsCollectorTicker = time.NewTicker(5 * time.Second)
+	constLabels := map[string]string{`consumer_id`: g.config.Id}
 	g.metrics.endToEndLatency = reporter.Observer(metrics.MetricConf{
-		Path:   "end_to_end_latency_microseconds",
-		Labels: []string{`topic_partition`},
+		Path:        "end_to_end_latency_microseconds",
+		ConstLabels: constLabels,
+		Labels:      []string{`topic_partition`},
 	})
 
 	g.metrics.consumerBufferCapacity = reporter.Gauge(metrics.MetricConf{
-		Path:   "consumer_buffer_capacity",
-		Labels: []string{`topic_partition`},
+		Path:        "consumer_buffer_capacity",
+		ConstLabels: constLabels,
+		Labels:      []string{`topic_partition`},
 	})
 
 	g.metrics.rebalanceLatency = reporter.Observer(metrics.MetricConf{
