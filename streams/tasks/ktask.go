@@ -154,38 +154,36 @@ func (t *task) Init(ctx topology.SubTopologyContext) error {
 		ConstLabels: labels,
 	})
 
-	defer func() {
-		// Each StateStore instance in the task has to be restored before the processing starts
-		for _, store := range t.subTopology.StateStores() {
-			changelog := store
-			t.runGroup.Add(func(opts *async.Opts) error {
-				defer func(start time.Time) {
-					t.metrics.stateStoreRecoveryLatencyMilliseconds.Observe(float64(time.Since(start).Milliseconds()),
-						map[string]string{`store`: changelog.Name()})
-				}(time.Now())
+	// Each StateStore instance in the task has to be restored before the processing start
+	for _, store := range t.subTopology.StateStores() {
+		changelog := store
+		t.runGroup.Add(func(opts *async.Opts) error {
+			defer func(start time.Time) {
+				t.metrics.stateStoreRecoveryLatencyMilliseconds.Observe(float64(time.Since(start).Milliseconds()),
+					map[string]string{`store`: changelog.Name()})
+			}(time.Now())
 
-				stateSynced := make(chan struct{}, 1)
-				go func() {
-					defer async.LogPanicTrace(t.logger)
+			stateSynced := make(chan struct{}, 1)
+			go func() {
+				defer async.LogPanicTrace(t.logger)
 
-					select {
-					// Once the state is synced we can stop the ChangelogSyncer
-					case <-stateSynced:
-						if err := changelog.Stop(); err != nil {
-							panic(err.Error())
-						}
-					// Task has received the stop signal. RunGroup is stopping
-					case <-opts.Stopping():
-						if err := changelog.Stop(); err != nil {
-							panic(err.Error())
-						}
+				select {
+				// Once the state is synced we can stop the ChangelogSyncer
+				case <-stateSynced:
+					if err := changelog.Stop(); err != nil {
+						panic(err.Error())
 					}
-				}()
+				// Task has received the stop signal. RunGroup is stopping
+				case <-opts.Stopping():
+					if err := changelog.Stop(); err != nil {
+						panic(err.Error())
+					}
+				}
+			}()
 
-				return changelog.Sync(ctx, stateSynced)
-			})
-		}
-	}()
+			return changelog.Sync(ctx, stateSynced)
+		})
+	}
 
 	return t.subTopology.Init(ctx)
 }
