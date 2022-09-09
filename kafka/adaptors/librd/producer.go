@@ -323,6 +323,11 @@ func (p *librdProducer) prepareMessage(message kafka.Record) (*librdKafka.Messag
 		m.TopicPartition.Partition = librdKafka.PartitionAny
 	}
 
+	if message.Partition() > 0 {
+		m.TopicPartition.Partition = message.Partition()
+		goto Headers
+	}
+
 	if p.config.PartitionerFunc != nil {
 		pCount, err := p.getPartitionCount(message.Topic())
 		if err != nil {
@@ -335,6 +340,7 @@ func (p *librdProducer) prepareMessage(message kafka.Record) (*librdKafka.Messag
 		}
 	}
 
+Headers:
 	for _, header := range message.Headers() {
 		m.Headers = append(m.Headers, librdKafka.Header{
 			Key:   string(header.Key),
@@ -344,10 +350,6 @@ func (p *librdProducer) prepareMessage(message kafka.Record) (*librdKafka.Messag
 
 	if !message.Timestamp().IsZero() {
 		m.Timestamp = message.Timestamp()
-	}
-
-	if message.Partition() > 0 {
-		m.TopicPartition.Partition = message.Partition()
 	}
 
 	return m, nil
@@ -360,7 +362,7 @@ func (p *librdProducer) getPartitionCount(topic string) (int32, error) {
 		return v.(int32), nil
 	}
 
-	meta, err := p.librdProducer.GetMetadata(&topic, false, 0)
+	meta, err := p.librdProducer.GetMetadata(&topic, false, 10000) //TODO make this configurable
 	if err != nil {
 		return 0, errors.Wrapf(err, `metadata fetch failed for %s`, topic)
 	}
