@@ -50,7 +50,7 @@ type kAdmin struct {
 	tempTopicConfigs map[string]*kafka.Topic
 }
 
-func NewAdmin(bootstrapServer []string, options ...AdminOption) *kAdmin {
+func NewAdmin(bootstrapServer []string, options ...AdminOption) (*kAdmin, error) {
 	opts := new(adminOptions)
 	opts.apply(options...)
 	saramaConfig := sarama.NewConfig()
@@ -59,14 +59,14 @@ func NewAdmin(bootstrapServer []string, options ...AdminOption) *kAdmin {
 	logger := opts.Logger.NewLog(log.Prefixed(`kafka-admin`))
 	admin, err := sarama.NewClusterAdmin(bootstrapServer, saramaConfig)
 	if err != nil {
-		logger.Fatal(fmt.Sprintf(`cannot get controller - %+v`, err))
+		return nil, errors.Wrap(err, `admin client failed`)
 	}
 
 	return &kAdmin{
 		admin:            admin,
 		logger:           logger,
 		tempTopicConfigs: map[string]*kafka.Topic{},
-	}
+	}, nil
 }
 
 func (a *kAdmin) FetchInfo(topics []string) (map[string]*kafka.Topic, error) {

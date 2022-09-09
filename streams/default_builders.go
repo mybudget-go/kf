@@ -50,8 +50,11 @@ func (dbs *DefaultBuilders) setup(configs *Config) {
 func (dbs *DefaultBuilders) configureAdaptors(typ string, configs *Config) {
 	switch typ {
 	case `librd`:
-		dbs.KafkaAdmin = saramaAdpt.NewAdmin(configs.BootstrapServers,
-			saramaAdpt.WithLogger(configs.Logger),
-		)
+		admin, err := saramaAdpt.NewAdmin(configs.BootstrapServers, saramaAdpt.WithLogger(configs.Logger))
+		if err != nil {
+			panic(err)
+		}
+
+		dbs.KafkaAdmin = admin
 	}
 }

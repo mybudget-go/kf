@@ -12,9 +12,11 @@ import (
 	"fmt"
 	librdKafka "github.com/confluentinc/confluent-kafka-go/kafka"
 	"github.com/gmbyapa/kstream/kafka"
+	"github.com/gmbyapa/kstream/kafka/adaptors/sarama"
 	"github.com/gmbyapa/kstream/pkg/errors"
 	"github.com/tryfix/log"
 	"github.com/tryfix/metrics"
+	"sync"
 	"time"
 )
 
@@ -42,6 +44,9 @@ type librdProducer struct {
 		}
 		produceErrors metrics.Counter
 	}
+
+	partitionCounts *sync.Map
+	adminClient     kafka.Admin
 }
 
 type producerProvider struct {
@@ -80,6 +85,12 @@ func NewProducer(configs *ProducerConfig) (kafka.Producer, error) {
 		return nil, errors.Wrap(err, `invalid producer configs`)
 	}
 
+	// Create an admin client to fetch topic metadata
+	admin, err := sarama.NewAdmin(configs.BootstrapServers)
+	if err != nil {
+		return nil, errors.Wrap(err, `metadata fetch failed`)
+	}
+
 	loggerPrefix := `Producer`
 	if configs.Transactional.Enabled {
 		loggerPrefix = `TransactionalProducer`
@@ -96,8 +107,10 @@ func NewProducer(configs *ProducerConfig) (kafka.Producer, error) {
 	defer configs.Logger.Info(`Producer initiated`)
 
 	p := &librdProducer{
-		config:        configs,
-		librdProducer: producer,
+		config:          configs,
+		librdProducer:   producer,
+		adminClient:     admin,
+		partitionCounts: new(sync.Map),
 	}
 
 	// Drain all the delivery messages (we don't need them here. since we are relying on transaction commit).
@@ -189,7 +202,11 @@ func (p *librdProducer) NewRecord(
 
 func (p *librdProducer) ProduceSync(ctx context.Context, message kafka.Record) (partition int32, offset int64, err error) {
 	dChan := make(chan librdKafka.Event)
-	kMessage := p.prepareMessage(message)
+	kMessage, err := p.prepareMessage(message)
+	if err != nil {
+		return 0, 0, errors.Wrapf(err, `message[%s] prepare error`, message)
+	}
+
 	err = p.librdProducer.Produce(kMessage, dChan)
 	if err != nil {
 		return 0, 0, errors.Wrap(err, `cannot send message`)
@@ -288,7 +305,7 @@ func (p *librdProducer) forceClose() error {
 	return nil
 }
 
-func (p *librdProducer) prepareMessage(message kafka.Record) *librdKafka.Message {
+func (p *librdProducer) prepareMessage(message kafka.Record) (*librdKafka.Message, error) {
 	t := time.Now()
 	topic := message.Topic()
 	m := &librdKafka.Message{
@@ -307,7 +324,15 @@ func (p *librdProducer) prepareMessage(message kafka.Record) *librdKafka.Message
 	}
 
 	if p.config.PartitionerFunc != nil {
-		m.TopicPartition.Partition, _ = p.config.PartitionerFunc(message, 1) // TODO fix this
+		pCount, err := p.getPartitionCount(message.Topic())
+		if err != nil {
+			return nil, errors.Wrapf(err, `partition count failed for %d`, pCount)
+		}
+
+		m.TopicPartition.Partition, err = p.config.PartitionerFunc(message, pCount)
+		if err != nil {
+			return nil, errors.Wrapf(err, `partitioner error`)
+		}
 	}
 
 	for _, header := range message.Headers() {
@@ -325,5 +350,23 @@ func (p *librdProducer) prepareMessage(message kafka.Record) *librdKafka.Message
 		m.TopicPartition.Partition = message.Partition()
 	}
 
-	return m
+	return m, nil
+}
+
+func (p *librdProducer) getPartitionCount(topic string) (int32, error) {
+	//TODO refresh counts in a ticker
+	v, ok := p.partitionCounts.Load(topic)
+	if ok {
+		return v.(int32), nil
+	}
+
+	meta, err := p.librdProducer.GetMetadata(&topic, false, 0)
+	if err != nil {
+		return 0, errors.Wrapf(err, `metadata fetch failed for %s`, topic)
+	}
+
+	count := int32(len(meta.Topics[topic].Partitions))
+	p.partitionCounts.Store(topic, count)
+
+	return count, nil
 }

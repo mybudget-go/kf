@@ -118,7 +118,11 @@ func (p *librdTxProducer) ProduceAsync(ctx context.Context, message kafka.Record
 		})
 	}(time.Now())
 
-	kMessage := p.prepareMessage(message)
+	kMessage, err := p.prepareMessage(message)
+	if err != nil {
+		return p.handleTxError(ctx, err, `ProduceAsync failed`, nil)
+	}
+
 	err = p.librdProducer.librdProducer.Produce(kMessage, nil)
 	if err != nil {
 		return p.handleTxError(ctx, err, `ProduceAsync failed`, nil)
