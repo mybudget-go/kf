@@ -30,14 +30,9 @@ type ReadOnlyStore interface {
 	ValEncoder() encoding.Encoder
 	Get(ctx context.Context, key interface{}) (value interface{}, err error)
 	Iterator(ctx context.Context) (Iterator, error)
+	PrefixedIterator(ctx context.Context, keyPrefix interface{}, prefixEncoder encoding.Encoder) (Iterator, error)
 	String() string
 	Close() error
-}
-
-type LoggableStore interface {
-	Store
-	EnableLogging() error
-	DisableLogging() error
 }
 
 type Closable interface {
@@ -139,8 +134,23 @@ func (s *store) Get(ctx context.Context, key interface{}) (value interface{}, er
 }
 
 func (s *store) Iterator(ctx context.Context) (Iterator, error) {
-
 	i := s.opts.backend.Iterator()
+	i.SeekToFirst()
+
+	return &iterator{
+		i:          i,
+		keyEncoder: s.keyEncoder,
+		valEncoder: s.valEncoder,
+	}, nil
+}
+
+func (s *store) PrefixedIterator(_ context.Context, keyPrefix interface{}, prefixEncoder encoding.Encoder) (Iterator, error) {
+	prefix, err := prefixEncoder.Encode(keyPrefix)
+	if err != nil {
+		return nil, errors.Wrapf(err, `prefix encode error`)
+	}
+
+	i := s.opts.backend.PrefixedIterator(prefix)
 	i.SeekToFirst()
 
 	return &iterator{

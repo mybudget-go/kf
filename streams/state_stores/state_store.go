@@ -1,9 +1,11 @@
 package state_stores
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"github.com/gmbyapa/kstream/backend/memory"
+	"github.com/gmbyapa/kstream/streams/encoding"
 	"time"
 
 	"github.com/gmbyapa/kstream/pkg/errors"
@@ -53,10 +55,37 @@ func (str *StateStore) Get(ctx context.Context, key interface{}) (interface{}, e
 }
 
 func (str *StateStore) Iterator(ctx context.Context) (stores.Iterator, error) {
-	itr, err := str.Store.Iterator(ctx)
-	// TODO handle error
-	if err != nil {
-		return nil, err
+	return str.iterator(ctx, nil, nil)
+}
+
+func (str *StateStore) PrefixedIterator(ctx context.Context, keyPrefix interface{}, prefixEncoder encoding.Encoder) (stores.Iterator, error) {
+	return str.iterator(ctx, keyPrefix, prefixEncoder)
+}
+
+func (str *StateStore) iterator(ctx context.Context, prefix interface{}, prefixEncoder encoding.Encoder) (stores.Iterator, error) {
+	var itr stores.Iterator
+	var prefixByt []byte
+	if prefix != nil {
+		byt, err := prefixEncoder.Encode(prefix)
+		if err != nil {
+			return nil, err
+		}
+		prefixByt = byt
+
+		i, err := str.Store.PrefixedIterator(ctx, prefix, prefixEncoder)
+		// TODO handle error
+		if err != nil {
+			return nil, err
+		}
+
+		itr = i
+	} else {
+		i, err := str.Store.Iterator(ctx)
+		// TODO handle error
+		if err != nil {
+			return nil, err
+		}
+		itr = i
 	}
 
 	records := make(map[string][]byte)
@@ -85,6 +114,9 @@ func (str *StateStore) Iterator(ctx context.Context) (stores.Iterator, error) {
 	}
 
 	for cachedK, cachedV := range str.cache.records {
+		if prefix != nil && !bytes.HasPrefix([]byte(cachedK), prefixByt) {
+			continue
+		}
 		records[cachedK] = cachedV
 	}
 

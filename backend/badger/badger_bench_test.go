@@ -5,13 +5,12 @@
  *    Gayan Yapa (gmbyapa@gmail.com)
  */
 
-package memory
+package badger
 
 import (
 	"fmt"
 	"github.com/gmbyapa/kstream/backend"
 	"github.com/tryfix/log"
-	"github.com/tryfix/metrics"
 	"math/rand"
 	"os"
 	"testing"
@@ -30,7 +29,8 @@ func TestMain(m *testing.M) {
 
 func seedBenchReadOnly(m *testing.M) {
 	conf := NewConfig()
-	benchReadOnlyBackend = NewMemoryBackend(`test`, conf)
+	conf.InMemory = true
+	benchReadOnlyBackend = NewBadgerBackend(`test`, conf)
 	for i := 1; i <= benchReadOnlyRecCount; i++ {
 		if err := benchReadOnlyBackend.Set([]byte(fmt.Sprint(i)), []byte(`100`), 0); err != nil {
 			panic(err)
@@ -38,10 +38,10 @@ func seedBenchReadOnly(m *testing.M) {
 	}
 }
 
-func BenchmarkMemory_Set(b *testing.B) {
+func BenchmarkBadger_Set(b *testing.B) {
 	conf := NewConfig()
-	conf.MetricsReporter = metrics.NoopReporter()
-	bkend := NewMemoryBackend(`test`, conf)
+	conf.InMemory = true
+	bkend := NewBadgerBackend(`test`, conf)
 
 	b.ResetTimer()
 	b.ReportAllocs()
@@ -54,7 +54,7 @@ func BenchmarkMemory_Set(b *testing.B) {
 	})
 }
 
-func BenchmarkMemory_Get(b *testing.B) {
+func BenchmarkBadger_Get(b *testing.B) {
 	b.ReportAllocs()
 
 	b.RunParallel(func(pb *testing.PB) {
@@ -68,10 +68,10 @@ func BenchmarkMemory_Get(b *testing.B) {
 	})
 }
 
-func BenchmarkMemory_GetSet(b *testing.B) {
+func BenchmarkBadger_GetSet(b *testing.B) {
 	conf := NewConfig()
-	conf.MetricsReporter = metrics.NoopReporter()
-	bkend := NewMemoryBackend(`test`, conf)
+	conf.InMemory = true
+	bkend := NewBadgerBackend(`test`, conf)
 
 	for i := 1; i <= 99999; i++ {
 		if err := bkend.Set([]byte(fmt.Sprint(rand.Intn(1000)+1)), []byte(`100`), 0); err != nil {
@@ -79,6 +79,7 @@ func BenchmarkMemory_GetSet(b *testing.B) {
 		}
 	}
 	b.ResetTimer()
+	b.ReportAllocs()
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
 			if _, err := bkend.Get([]byte(fmt.Sprint(rand.Intn(1000) + 1))); err != nil {
@@ -88,8 +89,9 @@ func BenchmarkMemory_GetSet(b *testing.B) {
 	})
 }
 
-func BenchmarkMemory_Iterator(b *testing.B) {
+func BenchmarkBadger_Iterator(b *testing.B) {
 	b.ReportAllocs()
+
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
 			i := benchReadOnlyBackend.Iterator()
@@ -99,6 +101,25 @@ func BenchmarkMemory_Iterator(b *testing.B) {
 			}
 
 			if c != benchReadOnlyRecCount {
+				b.Error(`count`, c)
+				b.Fail()
+			}
+		}
+	})
+}
+
+func BenchmarkBadger_PrefixedIterator(b *testing.B) {
+	b.ReportAllocs()
+
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			i := benchReadOnlyBackend.PrefixedIterator([]byte(`500000`))
+			var c int
+			for i.SeekToFirst(); i.Valid(); i.Next() {
+				c++
+			}
+			// Expected 50000, 500000, 500001, 500002, 500003, 500004, 500005, 500006, 500007, 500008, 500009
+			if c != 11 {
 				b.Error(`count`, c)
 				b.Fail()
 			}

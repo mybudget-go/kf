@@ -98,6 +98,10 @@ func (*MockStore) Iterator(ctx context.Context) (Iterator, error) {
 	panic("implement me")
 }
 
+func (*MockStore) PrefixedIterator(ctx context.Context, keyPrefix interface{}, prefixEncoder encoding.Encoder) (Iterator, error) {
+	panic("implement me")
+}
+
 func (s *MockStore) Delete(ctx context.Context, key interface{}) error {
 	k, err := s.kEncoder.Encode(key)
 	if err != nil {

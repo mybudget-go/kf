@@ -2,7 +2,7 @@ package stores
 
 import (
 	"context"
-	"github.com/gmbyapa/kstream/backend"
+	"github.com/gmbyapa/kstream/backend/mock"
 	"github.com/gmbyapa/kstream/streams/encoding"
 	"reflect"
 	"strings"
@@ -15,7 +15,7 @@ func indexStoreTestStoreSetup(t *testing.T, idx Index) IndexedStore {
 		encoding.StringEncoder{},
 		encoding.StringEncoder{},
 		[]Index{idx},
-		WithBackend(backend.NewMockBackend(`foo`, 0)),
+		WithBackend(mock.NewMockBackend(`foo`, 0)),
 	)
 	if err != nil {
 		t.Error(err)

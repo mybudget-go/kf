@@ -1,21 +1,30 @@
-package stores_test
+package stores
 
 import (
 	"context"
 	"github.com/gmbyapa/kstream/backend"
+	"github.com/gmbyapa/kstream/backend/badger"
+	"github.com/gmbyapa/kstream/backend/memory"
 	"github.com/gmbyapa/kstream/streams/encoding"
-	"github.com/gmbyapa/kstream/streams/stores"
 	"math/rand"
 	"testing"
-	"time"
 )
 
-func makeTestBenchStore(b *testing.B, expiry time.Duration) stores.Store {
-	stor, err := stores.NewStore(
+func makeTestBackend() backend.Backend {
+	conf := badger.NewConfig()
+	conf.InMemory = true
+	backend := badger.NewBadgerBackend(`mock`, conf)
+	backend = memory.NewMemoryBackend(`mock`, memory.NewConfig())
+
+	return backend
+}
+
+func makeTestBenchStore(b *testing.B) Store {
+	stor, err := NewStore(
 		`test_store`,
 		encoding.IntEncoder{},
 		encoding.StringEncoder{},
-		stores.WithBackend(backend.NewMockBackend(`mock`, expiry)))
+		WithBackend(makeTestBackend()))
 	if err != nil {
 		b.Error(err)
 	}
@@ -25,7 +34,7 @@ func makeTestBenchStore(b *testing.B, expiry time.Duration) stores.Store {
 
 func BenchmarkDefaultStore_Set(b *testing.B) {
 
-	store := makeTestBenchStore(b, 0)
+	store := makeTestBenchStore(b)
 	ctx := context.Background()
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
@@ -37,7 +46,7 @@ func BenchmarkDefaultStore_Set(b *testing.B) {
 }
 
 func BenchmarkDefaultStore_Get(b *testing.B) {
-	store := makeTestBenchStore(b, 0)
+	store := makeTestBenchStore(b)
 	ctx := context.Background()
 
 	for i := 1; i < 999999; i++ {
@@ -58,7 +67,7 @@ func BenchmarkDefaultStore_Get(b *testing.B) {
 }
 
 func BenchmarkDefaultStore_Delete(b *testing.B) {
-	store := makeTestBenchStore(b, 0)
+	store := makeTestBenchStore(b)
 	ctx := context.Background()
 
 	for i := 1; i <= 999999; i++ {

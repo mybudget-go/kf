@@ -57,13 +57,30 @@ func (l *LocalQueryableStoreWrapper) Get(ctx context.Context, key interface{}) (
 func (l *LocalQueryableStoreWrapper) Close() error { return nil }
 
 func (l *LocalQueryableStoreWrapper) Iterator(ctx context.Context) (stores.Iterator, error) {
+	return l.iterator(ctx, nil, nil)
+}
+
+func (l *LocalQueryableStoreWrapper) PrefixedIterator(ctx context.Context, keyPrefix interface{}, prefixEncoder encoding.Encoder) (stores.Iterator, error) {
+	return l.iterator(ctx, keyPrefix, prefixEncoder)
+}
+
+func (l *LocalQueryableStoreWrapper) iterator(ctx context.Context, prefix interface{}, prefixEncoder encoding.Encoder) (stores.Iterator, error) {
 	var iterators []stores.Iterator
 	for _, stor := range l.Instances() {
-		itr, err := stor.Iterator(ctx)
-		if err != nil {
-			return nil, err // TODO wrap error
+		if prefix != nil {
+			itr, err := stor.PrefixedIterator(ctx, prefix, prefixEncoder)
+			if err != nil {
+				return nil, err // TODO wrap error
+			}
+			iterators = append(iterators, itr)
+		} else {
+			itr, err := stor.Iterator(ctx)
+			if err != nil {
+				return nil, err // TODO wrap error
+			}
+			iterators = append(iterators, itr)
 		}
-		iterators = append(iterators, itr)
+
 	}
 
 	return &MultiStoreIterator{
@@ -80,10 +97,6 @@ func (i *MultiStoreIterator) SeekToFirst() {
 	i.iterators[0].SeekToFirst()
 }
 
-func (i *MultiStoreIterator) SeekToLast() {
-	i.iterators[len(i.iterators)-1].SeekToLast()
-}
-
 func (i *MultiStoreIterator) Next() {
 	if !i.iterators[i.current].Valid() {
 		i.current++
@@ -91,15 +104,6 @@ func (i *MultiStoreIterator) Next() {
 	}
 
 	i.iterators[i.current].Next()
-}
-
-func (i *MultiStoreIterator) Prev() {
-	if !i.iterators[i.current].Valid() {
-		i.current--
-		i.iterators[i.current].SeekToLast()
-	}
-
-	i.iterators[i.current].Prev()
 }
 
 func (i *MultiStoreIterator) Close() {
@@ -133,7 +137,3 @@ func (i *MultiStoreIterator) Valid() bool {
 func (i *MultiStoreIterator) Error() error {
 	return i.iterators[i.current].Error()
 }
-
-//func (i *MultiStoreIterator) BackendIterator() backend.Iterator {
-//	return i.iterators[i.current].BackendIterator()
-//}

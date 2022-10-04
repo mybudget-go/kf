@@ -7,9 +7,9 @@ import (
 
 type Iterator interface {
 	SeekToFirst()
-	SeekToLast()
+	//SeekToLast()
 	Next()
-	Prev()
+	//Prev()
 	Close()
 	Key() (interface{}, error)
 	Value() (interface{}, error)

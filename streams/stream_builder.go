@@ -3,9 +3,10 @@ package streams
 import (
 	"fmt"
 	"github.com/gmbyapa/kstream/backend"
-	"github.com/gmbyapa/kstream/backend/memory"
+	"github.com/gmbyapa/kstream/backend/badger"
 	"github.com/gmbyapa/kstream/kafka"
 	librd3Adpt "github.com/gmbyapa/kstream/kafka/adaptors/librd"
+	"github.com/gmbyapa/kstream/kafka/adaptors/sarama"
 	"github.com/gmbyapa/kstream/pkg/errors"
 	"github.com/gmbyapa/kstream/streams/encoding"
 	"github.com/gmbyapa/kstream/streams/state_stores"
@@ -18,10 +19,8 @@ import (
 
 type StreamBuilder struct {
 	tpBuilder topology.Builder
-	//defaultStpBuilder topology.SubTopologyBuilder
-	config          *Config
-	defaultBuilders *DefaultBuilders
-	providers       struct {
+	config    *Config
+	providers struct {
 		groupConsumer kafka.GroupConsumerProvider
 		consumer      kafka.ConsumerProvider
 		producer      kafka.ProducerProvider
@@ -31,6 +30,7 @@ type StreamBuilder struct {
 		stores      stores.Builder
 		indexStores stores.IndexedStoreBuilder
 	}
+	kafkaAdmin    kafka.Admin
 	storeRegistry stores.Registry
 	builderCtx    topology.BuilderContext
 }
@@ -39,13 +39,13 @@ type BuilderOpt func(config *StreamBuilder)
 
 func BuilderWithBackendBuilder(builder backend.Builder) BuilderOpt {
 	return func(config *StreamBuilder) {
-		config.defaultBuilders.Backend = builder
+		config.builders.backend = builder
 	}
 }
 
 func BuilderWithStoreBuilder(builder stores.Builder) BuilderOpt {
 	return func(config *StreamBuilder) {
-		config.defaultBuilders.Store = builder
+		config.builders.stores = builder
 	}
 }
 
@@ -74,45 +74,19 @@ func NewStreamBuilder(config *Config, opts ...BuilderOpt) *StreamBuilder {
 	}
 
 	b := &StreamBuilder{
-		config:          config,
-		defaultBuilders: new(DefaultBuilders),
+		config: config,
 	}
 
 	// Apply builders
 	config.Logger = config.Logger.NewLog(log.Prefixed(`kStream`))
 
-	// default backend builder will be memory
-	backendBuilderConfig := memory.NewConfig()
-	backendBuilderConfig.MetricsReporter = config.MetricsReporter.Reporter(metrics.ReporterConf{
-		Subsystem: "kstream_backends",
-	})
-	b.builders.backend = memory.Builder(backendBuilderConfig)
+	b.setupOpts(opts...)
 
-	b.builders.stores = func(name string, keyEncoder, valEncoder encoding.Encoder, options ...stores.Option) (stores.Store, error) {
-		return stores.NewStore(name, keyEncoder, valEncoder, append(
-			options,
-			stores.WithBackendBuilder(b.builders.backend),
-		)...)
-	}
-
-	b.builders.indexStores = func(name string, keyEncoder, valEncoder encoding.Encoder, indexes []stores.Index, options ...stores.Option) (stores.IndexedStore, error) {
-		return stores.NewIndexedStore(name, keyEncoder, valEncoder, indexes, append(
-			options,
-			stores.WithBackendBuilder(b.builders.backend),
-		)...)
-	}
-
-	// Apply default adaptors
-	b.providers.groupConsumer = librd3Adpt.NewGroupConsumerProvider(librd3Adpt.NewGroupConsumerConfig())
-	b.providers.consumer = librd3Adpt.NewConsumerProvider(librd3Adpt.NewConsumerConfig())
-	b.providers.producer = librd3Adpt.NewProducerProvider(librd3Adpt.NewProducerConfig())
-
-	b.defaultBuilders.setup(b.config)
 	b.storeRegistry = stores.NewRegistry(&stores.RegistryConfig{
 		Host:                config.Store.Http.Host,
 		HttpEnabled:         config.Store.Http.Enabled,
-		StoreBuilder:        b.defaultBuilders.Store,
-		IndexedStoreBuilder: b.defaultBuilders.IndexedStore,
+		StoreBuilder:        b.builders.stores,
+		IndexedStoreBuilder: b.builders.indexStores,
 		Logger:              b.config.Logger,
 		MetricsReporter:     config.MetricsReporter,
 	})
@@ -255,8 +229,44 @@ func (b *StreamBuilder) newBuilderCtx() topology.BuilderContext {
 		b.config.ApplicationId,
 		b.storeRegistry,
 		b.providers.producer.NewBuilder(b.config.Producer),
-		b.defaultBuilders.KafkaAdmin,
+		b.kafkaAdmin,
 		b.config.Logger,
 		b.config.MetricsReporter,
 	)
+}
+
+func (b *StreamBuilder) setupOpts(opts ...BuilderOpt) {
+	// TODO use opts
+	// default backend builder will be badger(memory)
+	backendBuilderConfig := badger.NewConfig()
+	backendBuilderConfig.InMemory = true
+	backendBuilderConfig.MetricsReporter = b.config.MetricsReporter.Reporter(metrics.ReporterConf{
+		Subsystem: "kstream_backends",
+	})
+	b.builders.backend = badger.Builder(backendBuilderConfig)
+	b.builders.stores = func(name string, keyEncoder, valEncoder encoding.Encoder, options ...stores.Option) (stores.Store, error) {
+		return stores.NewStore(name, keyEncoder, valEncoder, append(
+			options,
+			stores.WithBackendBuilder(b.builders.backend),
+		)...)
+	}
+
+	b.builders.indexStores = func(name string, keyEncoder, valEncoder encoding.Encoder, indexes []stores.Index, options ...stores.Option) (stores.IndexedStore, error) {
+		return stores.NewIndexedStore(name, keyEncoder, valEncoder, indexes, append(
+			options,
+			stores.WithBackendBuilder(b.builders.backend),
+		)...)
+	}
+
+	admin, err := sarama.NewAdmin(b.config.BootstrapServers, sarama.WithLogger(b.config.Logger))
+	if err != nil {
+		panic(err)
+	}
+
+	b.kafkaAdmin = admin
+
+	// Apply default adaptors
+	b.providers.groupConsumer = librd3Adpt.NewGroupConsumerProvider(librd3Adpt.NewGroupConsumerConfig())
+	b.providers.consumer = librd3Adpt.NewConsumerProvider(librd3Adpt.NewConsumerConfig())
+	b.providers.producer = librd3Adpt.NewProducerProvider(librd3Adpt.NewProducerConfig())
 }

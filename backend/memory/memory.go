@@ -158,8 +158,8 @@ func (m *memory) Get(key []byte) ([]byte, error) {
 	return record.(ByteRecord).Value, nil
 }
 
-func (m *memory) RangeIterator(fromKy []byte, toKey []byte) backend.Iterator {
-	panic("implement me")
+func (m *memory) PrefixedIterator(keyPrefix []byte) backend.Iterator {
+	panic("memory backend does not support PrefixedIterator")
 }
 
 func (m *memory) Iterator() backend.Iterator {

@@ -2,7 +2,6 @@ package stores
 
 import (
 	"context"
-	"github.com/gmbyapa/kstream/backend"
 	"github.com/gmbyapa/kstream/backend/memory"
 	"github.com/gmbyapa/kstream/streams/encoding"
 	"github.com/tryfix/metrics"
@@ -40,14 +39,6 @@ func BenchmarkIndexedStore_Set(b *testing.B) {
 }
 
 func BenchmarkIndexedStore_GetIndexedRecords(b *testing.B) {
-	idxStore := NewMockStore(`foo`, encoding.StringEncoder{}, encoding.StringEncoder{}, backend.NewMockBackend(`foo`, 0))
-	for i := 1; i < 99909; i++ {
-		compKey := strconv.Itoa(rand.Intn(4)+1) + `:` + strconv.Itoa(i)
-		if err := idxStore.Set(context.Background(), strconv.Itoa(i), compKey, 0); err != nil {
-			b.Error(err)
-		}
-	}
-
 	idx := NewIndex(`foo`, func(key, val interface{}) (idx interface{}) {
 		return strings.Split(val.(string), `:`)[0]
 	})
@@ -59,7 +50,7 @@ func BenchmarkIndexedStore_GetIndexedRecords(b *testing.B) {
 		encoding.StringEncoder{},
 		encoding.StringEncoder{},
 		[]Index{idx},
-		WithBackend(memory.NewMemoryBackend(`foo`, conf)))
+		WithBackend(makeTestBackend()))
 	if err != nil {
 		b.Error(err)
 	}

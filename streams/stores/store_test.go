@@ -1,27 +1,24 @@
-package stores_test
+package stores
 
 import (
 	"context"
 	"fmt"
-	"github.com/gmbyapa/kstream/backend/memory"
+	"github.com/gmbyapa/kstream/backend/badger"
 	"github.com/gmbyapa/kstream/streams/encoding"
-	"github.com/gmbyapa/kstream/streams/stores"
 	"reflect"
 	"sort"
 	"testing"
 	"time"
 )
 
-func makeTestStore(t *testing.T, expiry time.Duration) stores.Store {
-	conf := memory.NewConfig()
-	conf.RecordExpiryEnabled = true
-	conf.RecordExpiry = expiry
-	conf.ExpiredRecordCleanupInterval = 10 * time.Millisecond
-	stor, err := stores.NewStore(
+func makeTestStore(t *testing.T, expiry time.Duration) Store {
+	conf := badger.NewConfig()
+	conf.InMemory = true
+	stor, err := NewStore(
 		`test_store`,
 		encoding.StringEncoder{},
 		encoding.StringEncoder{},
-		stores.WithBackend(memory.NewMemoryBackend(`test_backend`, conf)))
+		WithBackend(badger.NewBadgerBackend(`test_backend`, conf)))
 	if err != nil {
 		t.Error(err)
 	}
@@ -112,54 +109,6 @@ func TestDefaultStore_Delete(t *testing.T) {
 	}
 }
 
-func TestDefaultStore_Set_Record_Expiry(t *testing.T) {
-	ctx := context.Background()
-	st := makeTestStore(t, 0)
-	testValue := `test_value`
-	testKey := `100`
-	expiry := 100 * time.Millisecond
-	err := st.Set(ctx, testKey, testValue, expiry)
-	if err != nil {
-		t.Error(err)
-		return
-	}
-
-	time.Sleep(expiry * 2)
-
-	v, err := st.Get(ctx, testKey)
-	if err != nil {
-		t.Error(err)
-	}
-
-	if v != nil {
-		t.Fail()
-	}
-}
-
-func TestDefaultStore_Set_Store_Expiry(t *testing.T) {
-	ctx := context.Background()
-	expiry := 100 * time.Millisecond
-	st := makeTestStore(t, expiry)
-	testValue := `test_value`
-	testKey := `100`
-	err := st.Set(ctx, testKey, testValue, 0)
-	if err != nil {
-		t.Error(err)
-		return
-	}
-
-	time.Sleep(expiry * 2)
-
-	v, err := st.Get(ctx, testKey)
-	if err != nil {
-		t.Error(err)
-	}
-
-	if v != nil {
-		t.Fail()
-	}
-}
-
 func TestDefaultStore_GetAll_FirstToLast(t *testing.T) {
 	ctx := context.Background()
 	st := makeTestStore(t, 0)
@@ -201,20 +150,17 @@ func TestDefaultStore_GetAll_FirstToLast(t *testing.T) {
 	}
 }
 
-func TestDefaultStore_GetAll_LastToFirst(t *testing.T) {
+func TestDefaultStore_Iterator(t *testing.T) {
 	ctx := context.Background()
 	st := makeTestStore(t, 0)
 
-	var keyVals []string
-	for i := 1; i <= 1000; i++ {
+	for i := 1; i <= 10; i++ {
 		key := fmt.Sprint(i)
 		val := fmt.Sprintf(`%d`, i*10)
-		keyVals = append(keyVals, fmt.Sprintf(`%s-%s`, key, val))
 		if err := st.Set(ctx, key, val, 0); err != nil {
 			t.Fatal(err)
 		}
 	}
-	sort.Strings(keyVals)
 
 	i, err := st.Iterator(ctx)
 	if err != nil {
@@ -222,22 +168,58 @@ func TestDefaultStore_GetAll_LastToFirst(t *testing.T) {
 	}
 	defer i.Close()
 
-	var keyValsHave []string
-	for i.SeekToLast(); i.Valid(); i.Prev() {
+	var keysHave []string
+	for i.SeekToFirst(); i.Valid(); i.Next() {
 		key, err := i.Key()
 		if err != nil {
 			t.Error(err)
 		}
 
-		val, err := i.Value()
+		keysHave = append(keysHave, key.(string))
+	}
+
+	sort.Strings(keysHave)
+	expected := []string{`1`, `10`, `2`, `3`, `4`, `5`, `6`, `7`, `8`, `9`}
+	if !reflect.DeepEqual(
+		expected, keysHave) {
+		t.Logf("expected: \n%v\n have: \n%v", expected, keysHave)
+		t.Fail()
+	}
+}
+
+func TestDefaultStore_PrefixedIterator(t *testing.T) {
+	ctx := context.Background()
+	st := makeTestStore(t, 0)
+
+	for i := 1; i <= 1000; i++ {
+		key := fmt.Sprint(i)
+		val := fmt.Sprintf(`%d`, i*10)
+		if err := st.Set(ctx, key, val, 0); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	i, err := st.PrefixedIterator(ctx, `10`, encoding.StringEncoder{})
+	if err != nil {
+		t.Error(err)
+	}
+	defer i.Close()
+
+	var keysHave []string
+	for i.SeekToFirst(); i.Valid(); i.Next() {
+		key, err := i.Key()
 		if err != nil {
 			t.Error(err)
 		}
-		keyValsHave = append(keyValsHave, fmt.Sprintf(`%s-%s`, key.(string), val.(string)))
+
+		keysHave = append(keysHave, key.(string))
 	}
 
-	sort.Strings(keyValsHave)
-	if !reflect.DeepEqual(keyVals, keyValsHave) {
+	sort.Strings(keysHave)
+	expected := []string{`10`, `100`, `1000`, `101`, `102`, `103`, `104`, `105`, `106`, `107`, `108`, `109`}
+	if !reflect.DeepEqual(
+		expected, keysHave) {
+		t.Logf("expected: \n%v\n have: \n%v", expected, keysHave)
 		t.Fail()
 	}
 }

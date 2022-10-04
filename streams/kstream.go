@@ -327,7 +327,7 @@ func (k *kStream) aggregate(store string, aggregatorFunc processors.AggregatorFu
 		optApplyier.encoders.val,
 		append([]state_stores.StoreBuilderOption{
 			state_stores.StoreBuilderWithStoreOption(
-				stores.WithBackendBuilder(k.builder.defaultBuilders.Backend)),
+				stores.WithBackendBuilder(k.builder.builders.backend)),
 			state_stores.WithChangelogOptions(
 				state_stores.ChangelogWithTopicTopicNameFormatter(k.builder.config.ChangelogTopicNameFormatter),
 			),
@@ -451,7 +451,7 @@ func (k *kStream) ToTable(store string, options ...TableOpt) Table {
 		tblOpts.encoders.key,
 		tblOpts.encoders.val,
 		append([]state_stores.StoreBuilderOption{
-			state_stores.StoreBuilderWithStoreOption(stores.WithBackendBuilder(k.builder.defaultBuilders.Backend)),
+			state_stores.StoreBuilderWithStoreOption(stores.WithBackendBuilder(k.builder.builders.backend)),
 			state_stores.WithChangelogOptions(
 				state_stores.ChangelogWithTopicTopicNameFormatter(k.builder.config.ChangelogTopicNameFormatter),
 			),
@@ -591,7 +591,7 @@ func (k *kStream) Repartition(topic string, opts ...RepartitionOpt) Stream {
 
 func (k *kStream) AddStateStore(name string, keyEnc, valEnc encoding.Encoder, options ...state_stores.StoreBuilderOption) {
 	opts := append([]state_stores.StoreBuilderOption{
-		state_stores.StoreBuilderWithStoreOption(stores.WithBackendBuilder(k.builder.defaultBuilders.Backend)),
+		state_stores.StoreBuilderWithStoreOption(stores.WithBackendBuilder(k.builder.builders.backend)),
 		state_stores.WithChangelogOptions(
 			state_stores.ChangelogWithTopicTopicNameFormatter(k.builder.config.ChangelogTopicNameFormatter),
 			state_stores.ChangelogWithTopicReplicaCount(k.builder.config.InternalTopicsDefaultReplicaCount),
