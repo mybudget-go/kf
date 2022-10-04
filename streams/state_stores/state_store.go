@@ -25,6 +25,12 @@ func (str *StateStore) Set(_ context.Context, key, value interface{}, _ time.Dur
 		return errors.Wrap(err, fmt.Sprintf(`store [%s] key encode error`, str))
 	}
 
+	// tombstone record
+	if value == nil {
+		str.cache.Delete(keyByt)
+		return nil
+	}
+
 	valByt, err := str.ValEncoder().Encode(value)
 	if err != nil {
 		return errors.Wrap(err, fmt.Sprintf(`store [%s] value encode err `, str))
@@ -41,7 +47,10 @@ func (str *StateStore) Get(ctx context.Context, key interface{}) (interface{}, e
 		return nil, errors.Wrap(err, fmt.Sprintf(`store [%s] key encode error`, str))
 	}
 
-	// TODO need to check the existence
+	if !str.cache.Has(keyByt) {
+		return str.Store.Get(ctx, key)
+	}
+
 	if valByt := str.cache.Read(keyByt); valByt != nil {
 		val, err := str.ValEncoder().Decode(valByt)
 		if err != nil {
@@ -51,7 +60,7 @@ func (str *StateStore) Get(ctx context.Context, key interface{}) (interface{}, e
 		return val, nil
 	}
 
-	return str.Store.Get(ctx, key)
+	return nil, nil
 }
 
 func (str *StateStore) Iterator(ctx context.Context) (stores.Iterator, error) {
@@ -114,6 +123,11 @@ func (str *StateStore) iterator(ctx context.Context, prefix interface{}, prefixE
 	}
 
 	for cachedK, cachedV := range str.cache.records {
+		if str.cache.Deleted(cachedK) {
+			delete(records, cachedK)
+			continue
+		}
+
 		if prefix != nil && !bytes.HasPrefix([]byte(cachedK), prefixByt) {
 			continue
 		}

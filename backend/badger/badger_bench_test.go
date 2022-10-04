@@ -21,13 +21,13 @@ var benchReadOnlyRecCount = 10000000
 
 func TestMain(m *testing.M) {
 	// call flag.Parse() here if TestMain uses flags
-	seedBenchReadOnly(m)
+	seedBenchReadOnly()
 	code := m.Run()
 	benchReadOnlyBackend.Close()
 	os.Exit(code)
 }
 
-func seedBenchReadOnly(m *testing.M) {
+func seedBenchReadOnly() {
 	conf := NewConfig()
 	conf.InMemory = true
 	benchReadOnlyBackend = NewBadgerBackend(`test`, conf)

@@ -22,6 +22,11 @@ func (c *Cache) Has(key []byte) bool {
 	return ok
 }
 
+func (c *Cache) Deleted(key string) bool {
+	val, ok := c.records[key]
+	return ok && val == nil
+}
+
 // Delete will make the underline record null
 func (c *Cache) Delete(key []byte) {
 	c.records[string(key)] = nil
