@@ -39,7 +39,7 @@ func NewConfig() *config {
 
 func (c *config) parse() {
 	if c.ExpiredRecordCleanupInterval == time.Duration(0) {
-		c.ExpiredRecordCleanupInterval = 10 * time.Second
+		c.ExpiredRecordCleanupInterval = 1 * time.Second
 	}
 
 	if c.StorageDir == `` {
@@ -104,7 +104,7 @@ func (m *badger) runCleaner() {
 	ticker := time.NewTicker(m.expiredRecordCleanupInterval)
 	for range ticker.C {
 	again:
-		err := m.db.RunValueLogGC(0.7)
+		err := m.db.RunValueLogGC(1)
 		if err == nil {
 			goto again
 		}
@@ -123,7 +123,7 @@ func (m *badger) Persistent() bool {
 	return true
 }
 
-func (m *badger) Set(key []byte, value []byte, expiry time.Duration) error {
+func (m *badger) Set(key []byte, value []byte, _ time.Duration) error {
 	defer func(begin time.Time) {
 		m.metrics.updateLatency.Observe(float64(time.Since(begin).Nanoseconds()/1e3), map[string]string{`name`: m.Name(), `type`: `memory`})
 	}(time.Now())

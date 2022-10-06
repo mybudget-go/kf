@@ -3,7 +3,7 @@ package streams
 import (
 	"fmt"
 	"github.com/gmbyapa/kstream/backend"
-	"github.com/gmbyapa/kstream/backend/badger"
+	"github.com/gmbyapa/kstream/backend/pebble"
 	"github.com/gmbyapa/kstream/kafka"
 	librd3Adpt "github.com/gmbyapa/kstream/kafka/adaptors/librd"
 	"github.com/gmbyapa/kstream/kafka/adaptors/sarama"
@@ -237,13 +237,14 @@ func (b *StreamBuilder) newBuilderCtx() topology.BuilderContext {
 
 func (b *StreamBuilder) setupOpts(opts ...BuilderOpt) {
 	// TODO use opts
-	// default backend builder will be badger(memory)
-	backendBuilderConfig := badger.NewConfig()
-	backendBuilderConfig.InMemory = true
+
+	// default backend builder will be pebble
+	backendBuilderConfig := pebble.NewConfig()
+	b.builders.backend = pebble.Builder(backendBuilderConfig)
+
 	backendBuilderConfig.MetricsReporter = b.config.MetricsReporter.Reporter(metrics.ReporterConf{
 		Subsystem: "kstream_backends",
 	})
-	b.builders.backend = badger.Builder(backendBuilderConfig)
 	b.builders.stores = func(name string, keyEncoder, valEncoder encoding.Encoder, options ...stores.Option) (stores.Store, error) {
 		return stores.NewStore(name, keyEncoder, valEncoder, append(
 			options,

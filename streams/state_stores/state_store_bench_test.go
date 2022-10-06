@@ -88,7 +88,7 @@ func BenchmarkStateStore_PrefixedIterator(b *testing.B) {
 			}
 			// Expected 50000, 500000, 500001, 500002, 500003, 500004, 500005, 500006, 500007, 500008, 500009
 			if c != 11 {
-				b.Error(`count`, c)
+				b.Errorf(`incorrect count: expected 11, got %d`, c)
 				b.Fail()
 			}
 		}

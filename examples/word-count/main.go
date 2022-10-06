@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"flag"
-	"fmt"
 	"github.com/bxcodec/faker/v3"
 	"github.com/gmbyapa/kstream/kafka"
 	"github.com/gmbyapa/kstream/kafka/adaptors/librd"
@@ -30,10 +29,10 @@ func main() {
 	config.Consumer.Offsets.Initial = kafka.OffsetEarliest
 	config.Logger = log.Constructor.Log()
 
-	seed()
+	seed(config.Logger)
 
 	builder := streams.NewStreamBuilder(config)
-	buildTopology(builder)
+	buildTopology(config.Logger, builder)
 
 	topology, err := builder.Build()
 	if err != nil {
@@ -59,10 +58,10 @@ func main() {
 	}
 }
 
-func buildTopology(builder *streams.StreamBuilder) {
+func buildTopology(logger log.Logger, builder *streams.StreamBuilder) {
 	stream := builder.KStream(TopicTextLines, encoding.StringEncoder{}, encoding.StringEncoder{})
 	stream.Each(func(ctx context.Context, key, value interface{}) {
-		println(`Word count for : ` + value.(string))
+		logger.Debug(`Word count for : ` + value.(string))
 	}).FlatMapValues(func(ctx context.Context, key, value interface{}) (values []interface{}, err error) {
 		for _, word := range strings.Split(value.(string), ` `) {
 			values = append(values, word)
@@ -82,15 +81,27 @@ func buildTopology(builder *streams.StreamBuilder) {
 	}, streams.AggregateWithValEncoder(encoding.IntEncoder{})).ToStream().To(`word-counts`)
 }
 
-func seed() {
+func seed(logger log.Logger) {
 	conf := librd.NewProducerConfig()
 	conf.BootstrapServers = strings.Split(*bootstrapServers, `,`)
+	conf.Transactional.Enabled = true
+	conf.Transactional.Id = `words-producer`
 	producer, err := librd.NewProducer(conf)
 	if err != nil {
 		panic(err)
 	}
 
-	for i := 0; i < 2; i++ {
+	txProducer := producer.(kafka.TransactionalProducer)
+
+	if err := txProducer.InitTransactions(context.Background()); err != nil {
+		panic(err)
+	}
+
+	if err := txProducer.BeginTransaction(); err != nil {
+		panic(err)
+	}
+
+	for i := 0; i < 100; i++ {
 		record := producer.NewRecord(
 			context.Background(),
 			[]byte(`test-key`),
@@ -102,11 +113,17 @@ func seed() {
 			``,
 		)
 
-		p, o, err := producer.ProduceSync(context.Background(), record)
+		err := txProducer.ProduceAsync(context.Background(), record)
 		if err != nil {
 			panic(err)
 		}
 
-		println(fmt.Sprintf(`message produced to textlines[%d]@%d`, p, o))
+		logger.Debug(`message produced to textlines`)
 	}
+
+	if err := txProducer.CommitTransaction(context.Background()); err != nil {
+		panic(err)
+	}
+
+	logger.Info(`Test records produced`)
 }

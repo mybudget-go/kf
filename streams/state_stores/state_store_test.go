@@ -34,8 +34,8 @@ type testRec struct {
 }
 
 type scenario struct {
-	store, cache, final []testRec
-	searchPrefix        string
+	store, cache, stateStore []testRec
+	searchPrefix             string
 }
 
 const cacheDeleted = `cacheDeleted`
@@ -46,6 +46,7 @@ const storeDoesNotExist = `storeDoesNotExist`
 
 func newScenario(t *testing.T, store, cache, final []testRec, searchPrefix string) {
 	stateStr := newMockStore()
+	defer stateStr.Close()
 
 	for _, rec := range store {
 		switch rec.value {
@@ -114,70 +115,70 @@ func TestStateStore_All(t *testing.T) {
 	tests := []scenario{
 		// New record version available in cache
 		{
-			store: []testRec{{`1`, `999`}},
-			cache: []testRec{{`1`, `100`}},
-			final: []testRec{{`1`, `100`}},
+			store:      []testRec{{`1`, `999`}},
+			cache:      []testRec{{`1`, `100`}},
+			stateStore: []testRec{{`1`, `100`}},
 		},
 		// Record doesn't exist in cache
 		{
-			store: []testRec{{`1`, `999`}},
-			cache: []testRec{{`1`, cacheDoesNotExist}},
-			final: []testRec{{`1`, `999`}},
+			store:      []testRec{{`1`, `999`}},
+			cache:      []testRec{{`1`, cacheDoesNotExist}},
+			stateStore: []testRec{{`1`, `999`}},
 		},
 		// Record deleted in cache
 		{
-			store: []testRec{{`1`, `999`}},
-			cache: []testRec{{`1`, cacheDeleted}},
-			final: nil,
+			store:      []testRec{{`1`, `999`}},
+			cache:      []testRec{{`1`, cacheDeleted}},
+			stateStore: nil,
 		},
 		// Record value nil in the store
 		{
-			store: []testRec{{`1`, nil}},
-			cache: []testRec{{`1`, cacheDoesNotExist}},
-			final: nil,
+			store:      []testRec{{`1`, nil}},
+			cache:      []testRec{{`1`, cacheDoesNotExist}},
+			stateStore: nil,
 		},
 		// Cached record doesn't exist in store
 		{
-			store: []testRec{{`1`, storeDoesNotExist}},
-			cache: []testRec{{`1`, `100`}},
-			final: []testRec{{`1`, `100`}},
+			store:      []testRec{{`1`, storeDoesNotExist}},
+			cache:      []testRec{{`1`, `100`}},
+			stateStore: []testRec{{`1`, `100`}},
 		},
 		// Record doesn't exist in cache or the store
 		{
-			store: []testRec{{`1`, storeDoesNotExist}},
-			cache: []testRec{{`1`, cacheDoesNotExist}},
-			final: nil,
+			store:      []testRec{{`1`, storeDoesNotExist}},
+			cache:      []testRec{{`1`, cacheDoesNotExist}},
+			stateStore: nil,
 		},
 		// Multiple record scenarios
 		{
-			store: []testRec{{`1`, `100`}, {`2`, `200`}},
-			cache: []testRec{{`2`, `999`}},
-			final: []testRec{{`1`, `100`}, {`2`, `999`}},
+			store:      []testRec{{`1`, `100`}, {`2`, `200`}},
+			cache:      []testRec{{`2`, `999`}},
+			stateStore: []testRec{{`1`, `100`}, {`2`, `999`}},
 		},
 		{
-			store: []testRec{{`1`, `100`}, {`2`, `200`}},
-			cache: []testRec{{`2`, `999`}, {`2`, cacheDeleted}},
-			final: []testRec{{`1`, `100`}},
+			store:      []testRec{{`1`, `100`}, {`2`, `200`}},
+			cache:      []testRec{{`2`, `999`}, {`2`, cacheDeleted}},
+			stateStore: []testRec{{`1`, `100`}},
 		},
 		{
-			store: []testRec{{`1`, `100`}},
-			cache: []testRec{{`2`, `999`}},
-			final: []testRec{{`1`, `100`}, {`2`, `999`}},
+			store:      []testRec{{`1`, `100`}},
+			cache:      []testRec{{`2`, `999`}},
+			stateStore: []testRec{{`1`, `100`}, {`2`, `999`}},
 		},
 		{
-			store: []testRec{{`1`, `100`}},
-			cache: []testRec{{`2`, `999`}},
-			final: []testRec{{`1`, `100`}, {`2`, `999`}},
+			store:      []testRec{{`1`, `100`}},
+			cache:      []testRec{{`2`, `999`}},
+			stateStore: []testRec{{`1`, `100`}, {`2`, `999`}},
 		},
 		{
-			store: []testRec{{`1`, `100`}, {`2`, `200`}},
-			cache: []testRec{{`1`, cacheDeleted}, {`2`, cacheDeleted}},
-			final: nil,
+			store:      []testRec{{`1`, `100`}, {`2`, `200`}},
+			cache:      []testRec{{`1`, cacheDeleted}, {`2`, cacheDeleted}},
+			stateStore: nil,
 		},
 		{
-			store: []testRec{{`1`, `100`}, {`2`, `200`}},
-			cache: nil,
-			final: []testRec{{`1`, `100`}, {`2`, `200`}},
+			store:      []testRec{{`1`, `100`}, {`2`, `200`}},
+			cache:      nil,
+			stateStore: []testRec{{`1`, `100`}, {`2`, `200`}},
 		},
 
 		// Search by key prefix
@@ -191,13 +192,13 @@ func TestStateStore_All(t *testing.T) {
 			},
 			cache:        []testRec{{`21`, `3100`}, {`33`, `999`}},
 			searchPrefix: `2`,
-			final:        []testRec{{`22`, `2200`}, {`21`, `3100`}},
+			stateStore:   []testRec{{`22`, `2200`}, {`21`, `3100`}},
 		},
 	}
 
 	for _, tt := range tests {
-		t.Run(fmt.Sprintf(`Store: %v | Cache: %v | Expected: %v`, tt.store, tt.cache, tt.final), func(t *testing.T) {
-			newScenario(t, tt.store, tt.cache, tt.final, tt.searchPrefix)
+		t.Run(fmt.Sprintf(`Store: %v | Cache: %v | Expected: %v`, tt.store, tt.cache, tt.stateStore), func(t *testing.T) {
+			newScenario(t, tt.store, tt.cache, tt.stateStore, tt.searchPrefix)
 		})
 	}
 }
