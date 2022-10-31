@@ -240,6 +240,7 @@ func (b *StreamBuilder) setupOpts(opts ...BuilderOpt) {
 
 	// default backend builder will be pebble
 	backendBuilderConfig := pebble.NewConfig()
+	backendBuilderConfig.Dir = b.config.Store.StateDir
 	b.builders.backend = pebble.Builder(backendBuilderConfig)
 
 	backendBuilderConfig.MetricsReporter = b.config.MetricsReporter.Reporter(metrics.ReporterConf{

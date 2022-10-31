@@ -6,6 +6,7 @@ import (
 	"github.com/gmbyapa/kstream/kafka"
 	"github.com/gmbyapa/kstream/streams/topology"
 	"github.com/tryfix/log"
+	"strconv"
 	"time"
 )
 
@@ -24,14 +25,22 @@ func (t *transactionalTask) Init(ctx topology.SubTopologyContext) error {
 
 func (t *transactionalTask) onFlush(records []*Record) error {
 	defer func(since time.Time) {
-		t.metrics.batchProcessLatencyMicroseconds.Observe(float64(time.Since(since).Microseconds()), nil)
+		t.metrics.batchFlushLatencyMicroseconds.Observe(float64(time.Since(since).Microseconds()), nil)
 		t.metrics.batchSize.Count(float64(len(records)), nil)
 	}(time.Now())
 
 	return t.processBatch(nil, records, 0)
 }
+
 func (t *transactionalTask) processBatch(previousErr error, records []*Record, itr int) error {
 	itr++
+
+	defer func(since time.Time) {
+		t.metrics.batchProcessLatencyMicroseconds.Observe(float64(time.Since(since).Microseconds()), map[string]string{
+			`retry_count`: strconv.Itoa(itr),
+		})
+	}(time.Now())
+
 	// Purge the store cache before the processing starts.
 	// This will clear out any half processed states from state store caches.
 	// The batch will either be processed and committed or will fail as a whole.

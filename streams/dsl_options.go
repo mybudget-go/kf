@@ -45,9 +45,8 @@ func DisableRepartition() StreamOption {
 }
 
 type JoinOptions struct {
-	streamOptions []StreamOption
-	lookupFunc    processors.ValueLookupFunc
-	oneToMany     bool
+	streamOptions                   []StreamOption
+	leftLookupFunc, rightLookupFunc processors.ValueLookupFunc
 }
 
 type JoinOption func(options *JoinOptions)
@@ -70,7 +69,19 @@ func JoinWithStreamOptions(opts ...StreamOption) JoinOption {
 
 func JoinWithValueLookupFunc(fn processors.ValueLookupFunc) JoinOption {
 	return func(options *JoinOptions) {
-		options.lookupFunc = fn
+		options.rightLookupFunc = fn
+	}
+}
+
+func JoinWithLeftValLookupFunc(fn processors.ValueLookupFunc) JoinOption {
+	return func(options *JoinOptions) {
+		options.leftLookupFunc = fn
+	}
+}
+
+func JoinWithRightValLookupFunc(fn processors.ValueLookupFunc) JoinOption {
+	return func(options *JoinOptions) {
+		options.rightLookupFunc = fn
 	}
 }
 

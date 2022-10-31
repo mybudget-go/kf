@@ -74,7 +74,7 @@ func (s *store) Name() string {
 }
 
 func (s *store) String() string {
-	return fmt.Sprintf(`Backend: %s`, s.Backend().Name())
+	return fmt.Sprintf(`%s(Backend: %s)`, s.Name(), s.Backend().Name())
 }
 
 func (s *store) KeyEncoder() encoding.Encoder {

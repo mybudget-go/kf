@@ -236,7 +236,6 @@ func (k *kStream) FlatMap(flatMapFunc processors.FlatMapFunc, opts ...StreamOpti
 	k.stpBuilder.AddNodeWithEdge(k.rootNode, node)
 
 	return k.newChildStream(node).maybeRepartitioned(
-		//RePartitionAs(fmt.Sprintf(`%s-%s`, k.kSource.Topic(), node.NodeName())),
 		rePartitionedDueTo(node, k.source()),
 		rePartitionedWithSourceOpts(
 			ConsumeWithAutoTopicCreateEnabled(
@@ -264,9 +263,7 @@ func (k *kStream) Aggregate(store string, aggregatorFunc processors.AggregatorFu
 	optApplyier.apply(opts...)
 
 	if !k.rePartitioned && k.repartitionOpts != nil {
-		return k.Repartition(``, append(
-			k.repartitionOpts.Apply(),
-		)...).aggregate(store, aggregatorFunc, optApplyier)
+		return k.Repartition(``, append(k.repartitionOpts.Apply(), rePartitionedDueTo(k.node(), k.source()))...).aggregate(store, aggregatorFunc, optApplyier)
 	}
 
 	return k.aggregate(store, aggregatorFunc, optApplyier)
@@ -356,7 +353,7 @@ func (k *kStream) JoinGlobalTable(table GlobalTable, keyMapper processors.KeyMap
 		Store:              table.Store().Name(),
 		KeyMapper:          keyMapper,
 		ValueMapper:        valMapper,
-		RightKeyLookupFunc: joinOpts.lookupFunc,
+		RightKeyLookupFunc: joinOpts.rightLookupFunc,
 	}
 
 	applyNodeOptions(joiner, joinOpts.streamOptions)
@@ -410,11 +407,11 @@ func (k *kStream) joinTable(table Table, valMapper processors.JoinValueMapper, t
 	k.stpBuilder.AddStore(table.stateStore())
 
 	leftJoiner := &processors.StreamJoiner{
-		CurrentSide:       processors.LeftSide,
-		OtherSideRequired: typ == processors.InnerJoin,
-		OtherStoreName:    table.stateStore().Name(),
-		ValueMapper:       valMapper,
-		ValueLookupFunc:   joinOpts.lookupFunc,
+		CurrentSide:         processors.LeftSide,
+		OtherSideRequired:   typ == processors.InnerJoin,
+		OtherStoreName:      table.stateStore().Name(),
+		ValueMapper:         valMapper,
+		OtherSideLookupFunc: joinOpts.rightLookupFunc,
 	}
 
 	applyNodeOptions(leftJoiner, joinOpts.streamOptions)

@@ -42,10 +42,12 @@ type Pebble struct {
 	logger  log.Logger
 	pebble  *pebbleDB.DB
 	metrics struct {
-		readLatency   metrics.Observer
-		updateLatency metrics.Observer
-		deleteLatency metrics.Observer
-		storageSize   metrics.Gauge
+		readLatency             metrics.Observer
+		updateLatency           metrics.Observer
+		iteratorLatency         metrics.Observer
+		prefixedIteratorLatency metrics.Observer
+		deleteLatency           metrics.Observer
+		storageSize             metrics.Gauge
 	}
 }
 
@@ -66,6 +68,8 @@ func NewPebbleBackend(name string, config *Config) (backend.Backend, error) {
 
 	labels := []string{`name`, `type`}
 	m.metrics.readLatency = config.MetricsReporter.Observer(metrics.MetricConf{Path: `backend_read_latency_microseconds`, Labels: labels})
+	m.metrics.iteratorLatency = config.MetricsReporter.Observer(metrics.MetricConf{Path: `backend_read_iterator_latency_microseconds`, Labels: labels})
+	m.metrics.prefixedIteratorLatency = config.MetricsReporter.Observer(metrics.MetricConf{Path: `backend_read_prefix_iterator_latency_microseconds`, Labels: labels})
 	m.metrics.updateLatency = config.MetricsReporter.Observer(metrics.MetricConf{Path: `backend_update_latency_microseconds`, Labels: labels})
 	m.metrics.storageSize = config.MetricsReporter.Gauge(metrics.MetricConf{Path: `backend_storage_size`, Labels: labels})
 	m.metrics.deleteLatency = config.MetricsReporter.Observer(metrics.MetricConf{Path: `backend_delete_latency_microseconds`, Labels: labels})
@@ -118,6 +122,10 @@ func (p *Pebble) Get(key []byte) ([]byte, error) {
 }
 
 func (p *Pebble) PrefixedIterator(keyPrefix []byte) backend.Iterator {
+	defer func(begin time.Time) {
+		p.metrics.prefixedIteratorLatency.Observe(float64(time.Since(begin).Nanoseconds()/1e3), map[string]string{`name`: p.Name(), `type`: `memory`})
+	}(time.Now())
+
 	opts := new(pebbleDB.IterOptions)
 	opts.LowerBound = keyPrefix
 	opts.UpperBound = keyUpperBound(keyPrefix)
@@ -125,6 +133,10 @@ func (p *Pebble) PrefixedIterator(keyPrefix []byte) backend.Iterator {
 }
 
 func (p *Pebble) Iterator() backend.Iterator {
+	defer func(begin time.Time) {
+		p.metrics.prefixedIteratorLatency.Observe(float64(time.Since(begin).Nanoseconds()/1e3), map[string]string{`name`: p.Name(), `type`: `memory`})
+	}(time.Now())
+
 	return &Iterator{itr: p.pebble.NewIter(new(pebbleDB.IterOptions))}
 }
 

@@ -107,21 +107,21 @@ func (tbl *kTableStream) join(table Table, valMapper processors.JoinValueMapper,
 	joinOpts.apply(opts...)
 
 	leftJoiner := &processors.StreamJoiner{
-		CurrentSide:       processors.LeftSide,
-		OtherSideRequired: typ == processors.RightJoin || typ == processors.InnerJoin,
-		OtherStoreName:    table.stateStore().Name(),
-		OtherSideFilters:  table.filters(),
-		ValueMapper:       valMapper,
-		ValueLookupFunc:   joinOpts.lookupFunc,
+		CurrentSide:         processors.LeftSide,
+		OtherSideRequired:   typ == processors.RightJoin || typ == processors.InnerJoin,
+		OtherStoreName:      table.stateStore().Name(),
+		OtherSideFilters:    table.filters(),
+		ValueMapper:         valMapper,
+		OtherSideLookupFunc: joinOpts.rightLookupFunc,
 	}
 
 	rightJoiner := &processors.StreamJoiner{
-		CurrentSide:       processors.RightSide,
-		OtherSideRequired: typ == processors.LeftJoin || typ == processors.InnerJoin,
-		OtherSideFilters:  tbl.filters(),
-		OtherStoreName:    tbl.store.Name(),
-		ValueMapper:       valMapper,
-		//ValueLookupFunc:   joinOpts.lookupFunc,
+		CurrentSide:         processors.RightSide,
+		OtherSideRequired:   typ == processors.LeftJoin || typ == processors.InnerJoin,
+		OtherSideFilters:    tbl.filters(),
+		OtherStoreName:      tbl.store.Name(),
+		ValueMapper:         valMapper,
+		OtherSideLookupFunc: joinOpts.leftLookupFunc,
 	}
 
 	// If sub topologies are different merge the other stream to current

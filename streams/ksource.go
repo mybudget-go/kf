@@ -129,7 +129,7 @@ func (s *KSource) Setup(ctx topology.SubTopologySetupContext) error {
 
 		numOfPartitions := ctx.MaxPartitionCount()
 
-		if s.RePartitionedAs() != nil {
+		if !s.Internal() && s.RePartitionedAs() != nil {
 			numOfPartitions = ctx.TopicMeta()[s.RePartitionedAs().Topic()].NumPartitions
 		}
 
@@ -144,9 +144,9 @@ func (s *KSource) Setup(ctx topology.SubTopologySetupContext) error {
 		// autoCreateOptions.partitionedAs to get the number of
 		// partitions form the parent
 		// TODO what if topology has more than one auto create topics
-		if ctx.MaxPartitionCount() < 1 && s.autoCreate.AutoTopicOpts.partitionAs != nil {
-			topic.NumPartitions = ctx.TopicMeta()[s.autoCreate.partitionAs.Topic()].NumPartitions
-		}
+		//if ctx.MaxPartitionCount() < 1 && s.autoCreate.AutoTopicOpts.partitionAs != nil {
+		//	topic.NumPartitions = ctx.TopicMeta()[s.autoCreate.partitionAs.Topic()].NumPartitions
+		//}
 
 		if err := ctx.Admin().StoreConfigs([]*kafka.Topic{topic}); err != nil {
 			return s.WrapErr(err)

@@ -120,6 +120,7 @@ type task struct {
 		stateStoreRecoveryLatencyMilliseconds metrics.Observer
 		processLatencyMicroseconds            metrics.Observer
 		batchProcessLatencyMicroseconds       metrics.Observer
+		batchFlushLatencyMicroseconds         metrics.Observer
 		batchSize                             metrics.Gauge
 	}
 
@@ -146,6 +147,11 @@ func (t *task) Init(ctx topology.SubTopologyContext) error {
 
 	t.metrics.batchProcessLatencyMicroseconds = t.metrics.reporter.Observer(metrics.MetricConf{
 		Path:        `batch_process_latency_microseconds`,
+		ConstLabels: labels,
+		Labels:      []string{`retry_count`},
+	})
+	t.metrics.batchFlushLatencyMicroseconds = t.metrics.reporter.Observer(metrics.MetricConf{
+		Path:        `batch_flush_latency_microseconds`,
 		ConstLabels: labels,
 	})
 

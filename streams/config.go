@@ -100,6 +100,7 @@ func NewStreamBuilderConfig() *Config {
 	config.Producer.Idempotent = true
 	config.Producer.Transactional.Enabled = true
 	config.Consumer.Offsets.Commit.Auto = false
+	config.Store.StateDir = `storage`
 
 	config.Store.Changelog.ReplicaCount = 1
 	config.InternalTopicsDefaultReplicaCount = 1
@@ -190,6 +191,10 @@ func (c *Config) validate() error {
 			return errors.New(`[GroupConsumer.Offsets.Commit.Auto] needs to be false 
 					when Processing.Guarantee == ExactlyOnce`)
 		}
+	}
+
+	if c.Store.StateDir == `` {
+		return errors.New(`[Store.StateDir] cannot be empty`)
 	}
 
 	return nil

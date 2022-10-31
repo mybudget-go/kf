@@ -79,7 +79,7 @@ func (k *kTopologyBuilder) Build(ctx topology.BuilderContext) (topology.Topology
 
 func (k *kTopologyBuilder) Reset(ctx topology.BuilderContext) error {
 	k.logger.Warn(`KStream resetting...`)
-	defer k.logger.Warn(`KStream reset`)
+	defer k.logger.Warn(`KStream resetted`)
 
 	// Setup SubTopologies
 	if err := k.setup(ctx); err != nil {
@@ -158,6 +158,7 @@ func (k *kTopologyBuilder) setup(ctx topology.BuilderContext) error {
 		if info.Error != nil {
 			return errors.Wrap(info.Error, fmt.Sprintf(`Metadata fetch failed on topic %s`, info.Name))
 		}
+		topicMap[info.Name].NumPartitions = info.NumPartitions
 	}
 
 	// Go through each sub topology to find source and sink topics
@@ -170,19 +171,20 @@ func (k *kTopologyBuilder) setup(ctx topology.BuilderContext) error {
 			if subTopology.Kind() == topology.KindGlobalTable {
 				break
 			}
+
 			switch s := nd.(type) {
 			case topology.Source:
 				// Marked as AutoCreate has to be excluded(yet to be created)
 				if topicMap[s.Topic()].AutoCreate {
 					// In each sub topology if the topology contains multiple topics they have to be co-partitioned
-					// including auto generated(eg: changelogs, repartitioned) topics.
-					// In this case if nominated-source-topic(RePartitionedAs) partition count is greater than
-					// current autoMaxPartitions then the autoMaxPartitions has to be adjusted to match the source
-					// topic
+					// including auto generated(eg: changelogs, repartitioned) topics. In this case if
+					// nominated-source-topic(RePartitionedAs) partition count is greater than current autoMaxPartitions
+					// then the autoMaxPartitions has to be adjusted to match the RePartitionedAs topic
 					if s.RePartitionedAs() != nil {
 						if tpInfo[s.RePartitionedAs().Topic()].NumPartitions > autoMaxPartitions {
 							autoMaxPartitions = tpInfo[s.RePartitionedAs().Topic()].NumPartitions
 						}
+						topicMap[s.Topic()].NumPartitions = autoMaxPartitions
 					}
 
 					continue

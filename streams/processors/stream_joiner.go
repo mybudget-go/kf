@@ -24,12 +24,12 @@ var defaultLookupFunc ValueLookupFunc = func(ctx context.Context,
 }
 
 type StreamJoiner struct {
-	OtherSideRequired bool
-	CurrentSide       Side
-	OtherStoreName    string
-	ValueMapper       JoinValueMapper
-	ValueLookupFunc   ValueLookupFunc
-	OtherSideFilters  []FilterFunc
+	OtherSideRequired   bool
+	CurrentSide         Side
+	OtherStoreName      string
+	ValueMapper         JoinValueMapper
+	OtherSideLookupFunc ValueLookupFunc
+	OtherSideFilters    []FilterFunc
 
 	otherStore stores.Store
 	topology.DefaultNode
@@ -47,17 +47,17 @@ func (sj *StreamJoiner) Init(ctx topology.NodeContext) error {
 
 func (sj *StreamJoiner) Build(_ topology.SubTopologyContext) (topology.Node, error) {
 	lookupFunc := defaultLookupFunc
-	if sj.ValueLookupFunc != nil {
-		lookupFunc = sj.ValueLookupFunc
+	if sj.OtherSideLookupFunc != nil {
+		lookupFunc = sj.OtherSideLookupFunc
 	}
 
 	return &StreamJoiner{
-		OtherSideRequired: sj.OtherSideRequired,
-		CurrentSide:       sj.CurrentSide,
-		OtherStoreName:    sj.OtherStoreName,
-		ValueMapper:       sj.ValueMapper,
-		ValueLookupFunc:   lookupFunc,
-		OtherSideFilters:  sj.OtherSideFilters,
+		OtherSideRequired:   sj.OtherSideRequired,
+		CurrentSide:         sj.CurrentSide,
+		OtherStoreName:      sj.OtherStoreName,
+		ValueMapper:         sj.ValueMapper,
+		OtherSideLookupFunc: lookupFunc,
+		OtherSideFilters:    sj.OtherSideFilters,
 
 		DefaultNode: sj.DefaultNode,
 	}, nil
@@ -65,16 +65,17 @@ func (sj *StreamJoiner) Build(_ topology.SubTopologyContext) (topology.Node, err
 
 func (sj *StreamJoiner) Run(ctx context.Context, kIn, vIn interface{}) (kOut, vOut interface{}, cont bool, err error) {
 	// Get the other side value/values
-	value, err := sj.ValueLookupFunc(ctx, sj.otherStore, kIn, vIn)
+	value, err := sj.OtherSideLookupFunc(ctx, sj.otherStore, kIn, vIn)
 	if err != nil {
 		return sj.IgnoreAndWrapErrWith(err, `RightTable read failed`)
 	}
 
+	// other side value is empty. no need to evaluate filters
 	if value == nil {
 		goto CONT
 	}
 
-	// apply filters
+	// Apply filters
 	for _, f := range sj.OtherSideFilters {
 		ok, err := f(ctx, kIn, value)
 		if err != nil {
