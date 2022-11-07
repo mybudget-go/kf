@@ -23,21 +23,21 @@ type ByteRecord struct {
 	expiry    time.Duration
 }
 
-type config struct {
+type Config struct {
 	StorageDir                   string
 	InMemory                     bool
 	ExpiredRecordCleanupInterval time.Duration
 	MetricsReporter              metrics.Reporter
 }
 
-func NewConfig() *config {
-	conf := new(config)
+func NewConfig() *Config {
+	conf := new(Config)
 	conf.parse()
 
 	return conf
 }
 
-func (c *config) parse() {
+func (c *Config) parse() {
 	if c.ExpiredRecordCleanupInterval == time.Duration(0) {
 		c.ExpiredRecordCleanupInterval = 1 * time.Second
 	}
@@ -64,13 +64,13 @@ type badger struct {
 	}
 }
 
-func Builder(config *config) backend.Builder {
+func Builder(config *Config) backend.Builder {
 	return func(name string) (backend backend.Backend, err error) {
 		return NewBadgerBackend(name, config), nil
 	}
 }
 
-func NewBadgerBackend(name string, config *config) backend.Backend {
+func NewBadgerBackend(name string, config *Config) backend.Backend {
 	storageDir := fmt.Sprintf(`%s/backends/badger/%s`, config.StorageDir, name)
 	if config.InMemory {
 		storageDir = ``
@@ -116,7 +116,7 @@ func (m *badger) Name() string {
 }
 
 func (m *badger) String() string {
-	return `memory`
+	return `memory(badger)`
 }
 
 func (m *badger) Persistent() bool {

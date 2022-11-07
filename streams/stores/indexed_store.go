@@ -2,8 +2,8 @@ package stores
 
 import (
 	"context"
-	nativeErrors "errors"
 	"fmt"
+	"github.com/gmbyapa/kstream/backend"
 	"github.com/gmbyapa/kstream/pkg/errors"
 	"github.com/gmbyapa/kstream/streams/encoding"
 
@@ -13,13 +13,14 @@ import (
 
 type Index interface {
 	String() string
-	Write(key, value interface{}) error
-	Hash(key, val interface{}) (hash interface{})
-	Delete(key, value interface{}) error
-	Read(index interface{}) ([]interface{}, error)
-	Keys() []interface{}
-	Values() map[interface{}][]interface{}
-	ValueIndexed(index, value interface{}) (bool, error)
+	Write(key string, value interface{}) error
+	Hash(key string, val interface{}) (hash string)
+	Delete(key string, value interface{}) error
+	Read(index string) (backend.Iterator, error)
+	Values(key string) ([]string, error)
+	Keys() ([]string, error)
+	KeyIndexed(index string, key string) (bool, error)
+	Close() error
 }
 
 type IndexedStore interface {
@@ -106,27 +107,19 @@ func (i *indexedStore) GetIndexedRecords(ctx context.Context, indexName string, 
 		return nil, fmt.Errorf(`index [%s] does not exist`, indexName)
 	}
 
-	itr := &indexIterator{}
-
-	indexedKeys, err := idx.Read(key)
+	kByt, err := i.KeyEncoder().Encode(key)
 	if err != nil {
-		if nativeErrors.Is(err, UnknownIndex) {
-			return itr, nil
-		}
-
 		return nil, err
 	}
 
-	for _, indexedKey := range indexedKeys {
-		record, err := i.Get(ctx, indexedKey)
-		if err != nil {
-			return nil, err
-		}
+	idxBkItr, err := idx.Read(string(kByt))
+	if err != nil {
+		return nil, err
+	}
 
-		itr.records = append(itr.records, &keyVal{
-			key: idx,
-			val: record,
-		})
+	itr := &indexIterator{
+		store:         i,
+		indexIterator: idxBkItr,
 	}
 
 	return itr, nil

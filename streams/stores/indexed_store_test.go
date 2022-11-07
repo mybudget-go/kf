@@ -5,7 +5,6 @@ import (
 	"github.com/gmbyapa/kstream/backend/mock"
 	"github.com/gmbyapa/kstream/streams/encoding"
 	"reflect"
-	"strings"
 	"testing"
 )
 
@@ -25,9 +24,7 @@ func indexStoreTestStoreSetup(t *testing.T, idx Index) IndexedStore {
 }
 
 func indexStoreIndexSetup(t *testing.T) Index {
-	return NewIndex(`foo`, func(key, val interface{}) (idx interface{}) {
-		return strings.Split(val.(string), `,`)[0]
-	})
+	return buildIndexT(t)
 }
 
 func Test_indexedStore_Delete(t *testing.T) {
@@ -46,12 +43,17 @@ func Test_indexedStore_Delete(t *testing.T) {
 		t.Error(err)
 	}
 
-	data, err := idx.Read(`111`)
+	itr, err := idx.Read(`111`)
 	if err != nil {
 		t.Error(err)
 	}
 
-	if !reflect.DeepEqual(data, []interface{}{`300`}) {
+	var data []string
+	for itr.SeekToFirst(); itr.Valid(); itr.Next() {
+		data = append(data, string(itr.Value()))
+	}
+
+	if !reflect.DeepEqual(data, []string{`300`}) {
 		t.Errorf(`want []string{300}, have %#v`, data)
 	}
 }
@@ -76,9 +78,14 @@ func Test_indexedStore_Delete_Should_Remove_Indexed_Values(t *testing.T) {
 		t.Error(err)
 	}
 
-	data, err := idx.Read(`111`)
+	itr, err := idx.Read(`111`)
 	if err != nil {
 		t.Error(err)
+	}
+
+	var data [][]byte
+	for itr.SeekToFirst(); itr.Valid(); itr.Next() {
+		data = append(data, itr.Value())
 	}
 
 	if len(data) > 0 {
@@ -98,15 +105,15 @@ func Test_indexedStore_Set(t *testing.T) {
 		t.Error(err)
 	}
 
-	data, err := idx.Read(`111`)
+	itr, err := idx.Read(`111`)
 	if err != nil {
 		t.Error(err)
 	}
 
-	var want []interface{}
-	for _, r := range data {
-		if r.(string) == `200` || r.(string) == `300` {
-			want = append(want, r)
+	var want []string
+	for itr.SeekToFirst(); itr.Valid(); itr.Next() {
+		if string(itr.Value()) == `200` || string(itr.Value()) == `300` {
+			want = append(want, string(itr.Value()))
 		}
 	}
 
@@ -127,9 +134,14 @@ func Test_indexedStore_Set_OldIndexedValues_ShouldGetDeleted(t *testing.T) {
 		t.Error(err)
 	}
 
-	data, err := idx.Read(`111`)
+	itr, err := idx.Read(`111`)
 	if err != nil {
 		t.Error(err)
+	}
+
+	var data [][]byte
+	for itr.SeekToFirst(); itr.Valid(); itr.Next() {
+		data = append(data, itr.Value())
 	}
 
 	if len(data) > 0 {

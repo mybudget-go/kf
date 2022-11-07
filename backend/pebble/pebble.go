@@ -91,7 +91,8 @@ func (p *Pebble) Persistent() bool {
 
 func (p *Pebble) Set(key []byte, value []byte, expiry time.Duration) error {
 	defer func(begin time.Time) {
-		p.metrics.updateLatency.Observe(float64(time.Since(begin).Nanoseconds()/1e3), map[string]string{`name`: p.Name(), `type`: `memory`})
+		p.metrics.updateLatency.Observe(
+			float64(time.Since(begin).Nanoseconds()/1e3), map[string]string{`name`: p.Name(), `type`: `memory`})
 	}(time.Now())
 
 	return p.pebble.Set(key, value, pebbleDB.NoSync)
@@ -99,7 +100,8 @@ func (p *Pebble) Set(key []byte, value []byte, expiry time.Duration) error {
 
 func (p *Pebble) Get(key []byte) ([]byte, error) {
 	defer func(begin time.Time) {
-		p.metrics.readLatency.Observe(float64(time.Since(begin).Nanoseconds()/1e3), map[string]string{`name`: p.Name(), `type`: `memory`})
+		p.metrics.readLatency.Observe(
+			float64(time.Since(begin).Nanoseconds()/1e3), map[string]string{`name`: p.Name(), `type`: `memory`})
 	}(time.Now())
 
 	valP, buf, err := p.pebble.Get(key)
@@ -150,7 +152,7 @@ func (p *Pebble) Delete(key []byte) error {
 
 func (p *Pebble) Destroy() error { return nil }
 
-func (p *Pebble) SetExpiry(time time.Duration) {}
+func (p *Pebble) SetExpiry(_ time.Duration) {}
 
 func (p *Pebble) reportMetricsSize() {}
 

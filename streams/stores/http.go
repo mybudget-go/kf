@@ -322,19 +322,17 @@ func MakeEndpoints(host string, registry Registry, logger log.Logger) {
 			return
 		}
 
-		encoded := make(map[string][]interface{})
-
-		for key, values := range idx.Values() {
-			byt, err := json.Marshal(key)
-			if err != nil {
-				h.logger.Error(err)
-				continue
+		keys, err := idx.Keys()
+		if err != nil {
+			res := h.encodeError(err)
+			if _, err := writer.Write(res); err != nil {
+				logger.Error(err)
+				return
 			}
-
-			encoded[string(byt)] = values
+			return
 		}
 
-		err = json.NewEncoder(writer).Encode(encoded)
+		err = json.NewEncoder(writer).Encode(keys)
 		if err != nil {
 			logger.Error(err)
 		}

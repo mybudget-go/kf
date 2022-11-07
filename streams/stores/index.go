@@ -2,119 +2,108 @@ package stores
 
 import (
 	"fmt"
-	"github.com/gmbyapa/kstream/pkg/errors"
-	"sync"
+	"github.com/gmbyapa/kstream/backend"
+	"github.com/gmbyapa/kstream/backend/pebble"
 )
 
-type KeyMapper func(key, val interface{}) (idx string)
+type KeyMapper func(key string, val interface{}) (idx string)
 
-var UnknownIndex = errors.New(`no values indexed for the key`)
+type IndexOption func(config *index)
+
+func (i *index) applyDefault() {
+	conf := pebble.NewConfig()
+	i.backendBuilder = func(name string) (backend.Backend, error) {
+		return pebble.NewPebbleBackend(name, conf)
+	}
+}
+
+func IndexWithBackend(builder backend.Builder) IndexOption {
+	return func(config *index) {
+		config.backendBuilder = builder
+	}
+}
 
 type index struct {
-	indexes map[interface{}]map[interface{}]struct{} // indexKey:recordKey:bool
-	mapper  func(key, val interface{}) (idx interface{})
-	mu      *sync.Mutex
-	name    string
+	mapper         KeyMapper
+	name           string
+	backendBuilder backend.Builder
+	backend        backend.Backend
 }
 
-func NewIndex(name string, mapper func(key, val interface{}) (idx interface{})) Index {
-	return &index{
-		indexes: make(map[interface{}]map[interface{}]struct{}),
-		mapper:  mapper,
-		mu:      new(sync.Mutex),
-		name:    name,
-	}
-}
-
-func (s *index) String() string {
-	return s.name
-}
-
-func (s *index) Write(key, value interface{}) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	hashKey := s.mapper(key, value)
-	_, ok := s.indexes[hashKey]
-	if !ok {
-		s.indexes[hashKey] = make(map[interface{}]struct{})
-	}
-	s.indexes[hashKey][key] = struct{}{}
-
-	return nil
-}
-
-func (s *index) ValueIndexed(index, value interface{}) (bool, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	_, ok := s.indexes[index]
-	if !ok {
-		return false, nil
+func NewIndex(name string, mapper KeyMapper, opts ...IndexOption) (Index, error) {
+	idx := &index{
+		mapper: mapper,
+		name:   name,
 	}
 
-	_, ok = s.indexes[index][value]
-	return ok, nil
-}
-
-func (s *index) Hash(key, val interface{}) (hash interface{}) {
-	return s.mapper(key, val)
-}
-
-func (s *index) Delete(key, value interface{}) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	hashKey := s.mapper(key, value)
-	if _, ok := s.indexes[hashKey]; !ok {
-		return fmt.Errorf(`hashKey [%s] does not exist for [%s]`, hashKey, s.name)
+	idx.applyDefault()
+	for _, opt := range opts {
+		opt(idx)
 	}
 
-	delete(s.indexes[hashKey], key)
-	return nil
+	bk, err := idx.backendBuilder(fmt.Sprintf(`idx_%s`, name))
+	if err != nil {
+		return nil, err
+	}
+
+	idx.backend = bk
+
+	return idx, nil
 }
 
-func (s *index) Keys() []interface{} {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	var keys []interface{}
-
-	for key := range s.indexes {
-		keys = append(keys, key)
-	}
-
-	return keys
+func (i *index) String() string {
+	return i.name
 }
 
-func (s *index) Values() map[interface{}][]interface{} {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	values := make(map[interface{}][]interface{})
-
-	for idx, keys := range s.indexes {
-		for key := range keys {
-			values[idx] = append(values[idx], key)
-		}
-	}
-
-	return values
+func (i *index) Write(key string, value interface{}) error {
+	hashKey := i.mapper(key, value)
+	return i.backend.Set([]byte(hashKey+key), []byte(key), 0)
 }
 
-func (s *index) Read(key interface{}) ([]interface{}, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	var indexes []interface{}
-	idx, ok := s.indexes[key]
-	if !ok {
-		return nil, UnknownIndex
+func (i *index) KeyIndexed(index, key string) (bool, error) {
+	kIdxed, err := i.backend.Get([]byte(index + key))
+	if err != nil {
+		return false, err
 	}
 
-	for k := range idx {
-		indexes = append(indexes, k)
+	return kIdxed != nil, nil
+}
+
+func (i *index) Hash(key string, val interface{}) (hash string) {
+	return i.mapper(key, val)
+}
+
+func (i *index) Delete(key string, value interface{}) error {
+	hashKey := i.mapper(key, value)
+	return i.backend.Delete([]byte(hashKey + key))
+}
+
+func (i *index) Values(key string) ([]string, error) {
+	itr := i.backend.PrefixedIterator([]byte(key))
+	var vals []string
+
+	for itr.SeekToFirst(); itr.Valid(); itr.Next() {
+		vals = append(vals, string(itr.Value()))
 	}
 
-	return indexes, nil
+	return vals, nil
+}
+
+func (i *index) Keys() ([]string, error) {
+	itr := i.backend.Iterator()
+	var keys []string
+
+	for itr.SeekToFirst(); itr.Valid(); itr.Next() {
+		keys = append(keys, string(itr.Key()))
+	}
+
+	return keys, nil
+}
+
+func (i *index) Read(key string) (backend.Iterator, error) {
+	return i.backend.PrefixedIterator([]byte(key)), nil
+}
+
+func (i *index) Close() error {
+	return i.backend.Close()
 }

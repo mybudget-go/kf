@@ -2,18 +2,65 @@ package stores
 
 import (
 	"context"
+	"github.com/gmbyapa/kstream/backend"
 	"github.com/gmbyapa/kstream/backend/memory"
+	"github.com/gmbyapa/kstream/backend/pebble"
 	"github.com/gmbyapa/kstream/streams/encoding"
 	"github.com/tryfix/metrics"
+	"os"
 	"strconv"
 	"strings"
 	"testing"
 )
 
-func BenchmarkUpdateIndexes(b *testing.B) {
-	idx := NewIndex(`foo`, func(key, val interface{}) (idx interface{}) {
+func buildIndexB(b *testing.B) Index {
+	var bkBuilder backend.Builder = func(name string) (backend.Backend, error) {
+		conf := pebble.NewConfig()
+		dir, err := os.MkdirTemp(os.TempDir(), `*`)
+		if err != nil {
+			return nil, err
+		}
+		conf.Dir = dir
+
+		return pebble.NewPebbleBackend(name, conf)
+
+	}
+
+	idx, err := NewIndex(`foo`, func(key string, val interface{}) (idx string) {
 		return strings.Split(val.(string), `,`)[0]
-	})
+	}, IndexWithBackend(bkBuilder))
+	if err != nil {
+		b.Error(err)
+	}
+
+	return idx
+}
+
+func buildIndexT(t *testing.T) Index {
+	var bkBuilder backend.Builder = func(name string) (backend.Backend, error) {
+		conf := pebble.NewConfig()
+		dir, err := os.MkdirTemp(os.TempDir(), `*`)
+		if err != nil {
+			return nil, err
+		}
+		conf.Dir = dir
+
+		return pebble.NewPebbleBackend(name, conf)
+
+	}
+
+	idx, err := NewIndex(`foo`, func(key string, val interface{}) (idx string) {
+		return strings.Split(val.(string), `,`)[0]
+	}, IndexWithBackend(bkBuilder))
+	if err != nil {
+		t.Error(err)
+	}
+
+	return idx
+}
+
+func BenchmarkUpdateIndexes(b *testing.B) {
+	idx := buildIndexB(b)
 
 	conf := memory.NewConfig()
 	conf.MetricsReporter = metrics.NoopReporter()
