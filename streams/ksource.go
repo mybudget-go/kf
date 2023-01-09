@@ -4,7 +4,6 @@ import (
 	"context"
 	"github.com/gmbyapa/kstream/kafka"
 	"github.com/gmbyapa/kstream/streams/encoding"
-	"github.com/gmbyapa/kstream/streams/tasks"
 	"github.com/gmbyapa/kstream/streams/topology"
 )
 
@@ -71,7 +70,6 @@ type KSource struct {
 		enabled bool
 		*AutoTopicOpts
 	}
-	taskOptions        []tasks.TaskOpt
 	internal           bool
 	topicNameFormatter TopicNameFormatter
 	topology.DefaultNode
@@ -116,8 +114,12 @@ func (s *KSource) Build(_ topology.SubTopologyContext) (topology.Node, error) {
 		encoder:               s.encoder,
 		topic:                 s.topic,
 		offsetReset:           s.offsetReset,
-		DefaultNode:           s.DefaultNode,
+		coPartitionedWith:     s.coPartitionedWith,
 		sourceCtxParamBinders: s.sourceCtxParamBinders,
+		autoCreate:            s.autoCreate,
+		internal:              s.internal,
+		topicNameFormatter:    s.topicNameFormatter,
+		DefaultNode:           s.DefaultNode,
 	}, nil
 }
 
@@ -144,9 +146,9 @@ func (s *KSource) Setup(ctx topology.SubTopologySetupContext) error {
 		// autoCreateOptions.partitionedAs to get the number of
 		// partitions form the parent
 		// TODO what if topology has more than one auto create topics
-		//if ctx.MaxPartitionCount() < 1 && s.autoCreate.AutoTopicOpts.partitionAs != nil {
-		//	topic.NumPartitions = ctx.TopicMeta()[s.autoCreate.partitionAs.Topic()].NumPartitions
-		//}
+		if ctx.MaxPartitionCount() < 1 && s.autoCreate.AutoTopicOpts.partitionAs != nil {
+			topic.NumPartitions = ctx.TopicMeta()[s.autoCreate.partitionAs.Topic()].NumPartitions
+		}
 
 		if err := ctx.Admin().StoreConfigs([]*kafka.Topic{topic}); err != nil {
 			return s.WrapErr(err)
@@ -162,16 +164,20 @@ func (s *KSource) Run(ctx context.Context, kIn, vIn interface{}) (kOut, vOut int
 		return nil, nil, false, encoding.Err{Err: s.WrapErrWith(err, `key decode error`)}
 	}
 
-	v, err := s.encoder.Value.Decode(vIn.([]byte))
-	if err != nil {
-		return nil, nil, false, encoding.Err{Err: s.WrapErrWith(err, `value decode error`)}
-	}
-
 	if s.sourceCtxParamBinders != nil {
 		for _, bind := range s.sourceCtxParamBinders {
 			ctxK, ctxV := bind(topology.RecordFromContext(ctx))
 			ctx = context.WithValue(ctx, ctxK, ctxV)
 		}
+	}
+
+	if len(vIn.([]byte)) < 1 {
+		return s.Forward(ctx, k, nil, true)
+	}
+
+	v, err := s.encoder.Value.Decode(vIn.([]byte))
+	if err != nil {
+		return nil, nil, false, encoding.Err{Err: s.WrapErrWith(err, `value decode error`)}
 	}
 
 	return s.Forward(ctx, k, v, true)
@@ -200,15 +206,17 @@ func (s *KSource) RePartitionedAs() topology.Source {
 	}
 
 	if s.autoCreate.partitionAs.AutoCreate() {
-		return s.getExistingParent(s.autoCreate.partitionAs)
+		return s.GetExistingParent(s.autoCreate.partitionAs)
 	}
 
 	return s.autoCreate.partitionAs
 }
 
-func (s *KSource) getExistingParent(src topology.Source) topology.Source {
-	if src != nil && src.AutoCreate() {
-		return s.getExistingParent(src.RePartitionedAs())
+// getExistingParent return a parent topic which already exists in kafka
+// This is possible because each auto created sub topology must have a origin topic
+func (s *KSource) GetExistingParent(src topology.Source) topology.Source {
+	if src.AutoCreate() {
+		return s.GetExistingParent(src.RePartitionedAs())
 	}
 
 	return src

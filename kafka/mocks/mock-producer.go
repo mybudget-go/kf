@@ -2,6 +2,7 @@ package mocks
 
 import (
 	"context"
+	librd "github.com/confluentinc/confluent-kafka-go/kafka"
 	"github.com/gmbyapa/kstream/kafka"
 	"hash"
 	"hash/fnv"
@@ -10,12 +11,14 @@ import (
 type MockStreamProducer struct {
 	hasher hash.Hash32
 	topics *Topics
+	libed  *librd.Producer
 }
 
 func NewMockProducer(topics *Topics) *MockStreamProducer {
 	return &MockStreamProducer{
 		hasher: fnv.New32a(),
 		topics: topics,
+		//libed: librd.NewMockCluster(),
 	}
 }
 

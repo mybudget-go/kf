@@ -189,7 +189,7 @@ func (a *kAdmin) CreateTopics(topics []*kafka.Topic) error {
 	}
 
 	result, err := a.admin.CreateTopics(context.Background(), specifications,
-		librdKafka.SetAdminRequestTimeout(1*time.Minute))
+		librdKafka.SetAdminRequestTimeout(a.timeout*time.Second))
 	if err != nil {
 		return errors.Wrapf(err, `could not create topics [%v]`, topics)
 	}
@@ -197,7 +197,7 @@ func (a *kAdmin) CreateTopics(topics []*kafka.Topic) error {
 	for _, res := range result {
 		if res.Error.Code() != librdKafka.ErrNoError {
 			if res.Error.Code() == librdKafka.ErrTopicAlreadyExists {
-				a.logger.Warn(fmt.Sprintf(`CreateTopics %s create %s`, res.Topic, res.Error))
+				a.logger.Warn(fmt.Sprintf(`Topic already exists %s create %s`, res.Topic, res.Error))
 				continue
 			}
 

@@ -5,7 +5,7 @@ import (
 	"github.com/gmbyapa/kstream/kafka"
 	"github.com/gmbyapa/kstream/pkg/async"
 	"github.com/gmbyapa/kstream/pkg/errors"
-	tasks2 "github.com/gmbyapa/kstream/streams/tasks"
+	"github.com/gmbyapa/kstream/streams/tasks"
 	"github.com/gmbyapa/kstream/streams/topology"
 	"github.com/tryfix/log"
 )
@@ -13,7 +13,7 @@ import (
 type GlobalTableConsumer struct {
 	consumer    kafka.PartitionConsumer
 	logger      log.Logger
-	taskManager tasks2.TaskManager
+	taskManager tasks.TaskManager
 	ctx         topology.BuilderContext
 	runGroup    *async.RunGroup
 }
@@ -37,7 +37,7 @@ func (g *GlobalTableConsumer) Init(topologyBuilder topology.Topology) error {
 			}
 
 			g.runGroup.Add(func(opts *async.Opts) error {
-				go func(task tasks2.Task) {
+				go func(task tasks.Task) {
 					defer async.LogPanicTrace(g.logger)
 
 					<-opts.Stopping()
@@ -46,7 +46,7 @@ func (g *GlobalTableConsumer) Init(topologyBuilder topology.Topology) error {
 					}
 				}(task)
 
-				go func(task tasks2.Task) {
+				go func(task tasks.Task) {
 					defer async.LogPanicTrace(g.logger)
 
 					if err := task.Ready(); err != nil && !errors.Is(err, async.ErrInterrupted) {

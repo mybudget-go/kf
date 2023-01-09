@@ -144,7 +144,7 @@ func (c *Config) setUp() {
 
 	if c.Processing.FailedMessageHandler == nil {
 		c.Processing.FailedMessageHandler = func(err error, record kafka.Record) {
-			c.Logger.Error(err.Error())
+			c.Logger.ErrorContext(record.Ctx(), err.Error())
 		}
 	}
 }

@@ -55,6 +55,12 @@ func BuilderWithProducerProvider(provider kafka.ProducerProvider) BuilderOpt {
 	}
 }
 
+func BuilderWithAdminClient(admin kafka.Admin) BuilderOpt {
+	return func(config *StreamBuilder) {
+		config.kafkaAdmin = admin
+	}
+}
+
 func BuilderWithConsumerProvider(provider kafka.GroupConsumerProvider) BuilderOpt {
 	return func(config *StreamBuilder) {
 		config.providers.groupConsumer = provider
@@ -236,8 +242,6 @@ func (b *StreamBuilder) newBuilderCtx() topology.BuilderContext {
 }
 
 func (b *StreamBuilder) setupOpts(opts ...BuilderOpt) {
-	// TODO use opts
-
 	// default backend builder will be pebble
 	backendBuilderConfig := pebble.NewConfig()
 	backendBuilderConfig.Dir = b.config.Store.StateDir
@@ -253,7 +257,7 @@ func (b *StreamBuilder) setupOpts(opts ...BuilderOpt) {
 		)...)
 	}
 
-	b.builders.indexStores = func(name string, keyEncoder, valEncoder encoding.Encoder, indexes []stores.Index, options ...stores.Option) (stores.IndexedStore, error) {
+	b.builders.indexStores = func(name string, keyEncoder, valEncoder encoding.Encoder, indexes []stores.IndexBuilder, options ...stores.Option) (stores.IndexedStore, error) {
 		return stores.NewIndexedStore(name, keyEncoder, valEncoder, indexes, append(
 			options,
 			stores.WithBackendBuilder(b.builders.backend),
@@ -271,4 +275,8 @@ func (b *StreamBuilder) setupOpts(opts ...BuilderOpt) {
 	b.providers.groupConsumer = librd3Adpt.NewGroupConsumerProvider(librd3Adpt.NewGroupConsumerConfig())
 	b.providers.consumer = librd3Adpt.NewConsumerProvider(librd3Adpt.NewConsumerConfig())
 	b.providers.producer = librd3Adpt.NewProducerProvider(librd3Adpt.NewProducerConfig())
+
+	for _, opt := range opts {
+		opt(b)
+	}
 }

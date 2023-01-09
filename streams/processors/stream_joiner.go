@@ -79,7 +79,7 @@ func (sj *StreamJoiner) Run(ctx context.Context, kIn, vIn interface{}) (kOut, vO
 	for _, f := range sj.OtherSideFilters {
 		ok, err := f(ctx, kIn, value)
 		if err != nil {
-			return sj.IgnoreWithError(err)
+			return sj.IgnoreAndWrapErrWith(err, `OtherSideFilters filter func failed`)
 		}
 
 		// if any filter returns false, stop evaluating others and make value nil

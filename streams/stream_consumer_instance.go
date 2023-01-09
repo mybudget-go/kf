@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/gmbyapa/kstream/kafka"
+	"github.com/gmbyapa/kstream/pkg/errors"
 	"github.com/gmbyapa/kstream/streams/tasks"
 	"github.com/gmbyapa/kstream/streams/topology"
 	"github.com/tryfix/log"
@@ -42,31 +43,49 @@ func (r *streamConsumerInstance) OnPartitionRevoked(ctx context.Context, session
 func (r *streamConsumerInstance) OnPartitionAssigned(_ context.Context, session kafka.GroupSession) error {
 	r.currentAssignment = r.generation.Assign(session.Assignment().TPs()...)
 	r.logger.Info(fmt.Sprintf("Assigning tasks -> \n%s", r.currentAssignment))
+
 	wg := sync.WaitGroup{}
 	wg.Add(len(r.currentAssignment))
 
-	// Apply offset resets
+	// Apply offset resets (if any)
 	for _, tp := range session.Assignment().TPs() {
 		if src := r.topologyBuilder.SourceByTopic(tp.Topic); src != nil {
 			session.Assignment().ResetOffset(tp, src.InitialOffset())
 		}
 	}
 
+	// Restore tasks
 	for _, mapping := range r.currentAssignment {
 		go func(wg *sync.WaitGroup, mapping *tasks.TaskMapping) {
 			defer wg.Done()
-			t, err := r.taskManager.AddTask(r.ctx, mapping.TaskId(), mapping.SubTopologyBuilder(), session)
+			_, err := r.taskManager.AddTask(r.ctx, mapping.TaskId(), mapping.SubTopologyBuilder(), session)
 			if err != nil {
-				panic(err)
-			}
-
-			if err := t.Sync(); err != nil {
 				panic(err)
 			}
 
 		}(&wg, mapping)
 	}
 	wg.Wait()
+
+	r.logger.Info(`Tasks restored`)
+
+	// Init tasks
+	wg = sync.WaitGroup{}
+	wg.Add(len(r.currentAssignment))
+	for _, mapping := range r.currentAssignment {
+		go func(wg *sync.WaitGroup, mapping *tasks.TaskMapping) {
+			defer wg.Done()
+			tsk, err := r.taskManager.Task(mapping.TaskId())
+			if err != nil {
+				panic(err)
+			}
+
+			tsk.Init()
+
+		}(&wg, mapping)
+	}
+	wg.Wait()
+	r.logger.Info(`Tasks inited`)
 
 	return nil
 }
@@ -83,7 +102,7 @@ func (r *streamConsumerInstance) Consume(ctx context.Context, session kafka.Grou
 	mapping := r.generation.FindMappingByTP(claim.TopicPartition())
 	task, err := r.taskManager.Task(mapping.TaskId())
 	if err != nil {
-		panic(err.Error())
+		return errors.Wrapf(err, `task %s error`, mapping.TaskId())
 	}
 
 	task.Start(ctx, claim, session)

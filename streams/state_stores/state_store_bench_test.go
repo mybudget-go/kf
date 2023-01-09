@@ -35,7 +35,7 @@ func seedBenchReadOnly() {
 
 	benchReadOnlyStore = &StateStore{
 		Store: str,
-		cache: newCache(),
+		cache: str.Cache(),
 	}
 
 	for i := 1; i <= benchCachedRecCount; i++ {

@@ -29,7 +29,10 @@ func (str *loggableStateStoreInstance) Set(ctx context.Context, key, value inter
 		return errors.Wrapf(err, `store [%s] changelog write failed`, str)
 	}
 
-	str.cache.Write(keyByt, valByt)
+	if err := str.cache.Backend().Set(keyByt, valByt, 0); err != nil {
+		return errors.Wrapf(err, `store %s cache backend write failed`, str.Store)
+	}
+
 	return nil
 }
 
@@ -43,7 +46,9 @@ func (str *loggableStateStoreInstance) Delete(ctx context.Context, key interface
 		return errors.Wrapf(err, `store [%s] changelog write failed`, str)
 	}
 
-	str.cache.Delete(keyByt)
+	if err := str.cache.Backend().Delete(keyByt); err != nil {
+		return errors.Wrapf(err, `store %s cache backend delete failed`, str.Store)
+	}
 
 	return nil
 }

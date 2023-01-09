@@ -15,7 +15,6 @@ import (
 
 type RecodeContext interface {
 	context.Context
-	Record() kafka.Record
 }
 
 var val struct{}

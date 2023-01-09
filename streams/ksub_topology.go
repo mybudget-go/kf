@@ -51,14 +51,6 @@ func (t *KSubTopology) Store(name string) topology.StateStore {
 	return stor
 }
 
-func (t *KSubTopology) AddStore(store topology.LoggableStateStore) {
-	if _, ok := t.stores[store.Name()]; ok {
-		panic(fmt.Sprintf(`%s -  store [%s], already exists, SubTopology:%s`, t.id, store.Name()))
-	}
-
-	t.stores[store.Name()] = store
-}
-
 func (t *KSubTopology) Nodes() []topology.Node {
 	return t.nodes
 }

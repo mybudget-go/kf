@@ -14,7 +14,7 @@ type TaskGeneration struct {
 	mappingsMap map[string]*TaskMapping
 }
 
-func (g TaskGeneration) Mappings() TaskAssignment {
+func (g *TaskGeneration) Mappings() TaskAssignment {
 	return g.mappings
 }
 
@@ -49,7 +49,7 @@ func (a TaskMapping) SubTopologyBuilder() topology.SubTopologyBuilder {
 	return a.topology
 }
 
-func (g TaskGeneration) FindMappingByTP(partition kafka.TopicPartition) *TaskMapping {
+func (g *TaskGeneration) FindMappingByTP(partition kafka.TopicPartition) *TaskMapping {
 	for _, mp := range g.mappings {
 		for _, tp := range mp.TPs {
 			if tp.String() == partition.String() {

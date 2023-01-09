@@ -4,14 +4,13 @@ import (
 	"context"
 	"github.com/gmbyapa/kstream/kafka"
 	"github.com/gmbyapa/kstream/pkg/async"
-	"github.com/gmbyapa/kstream/streams/topology"
 )
 
 type globalTask struct {
 	*task
 }
 
-func (t *globalTask) Init(ctx topology.SubTopologyContext) error {
+func (t *globalTask) Init() error {
 	defer func() {
 		for _, store := range t.subTopology.StateStores() {
 			stateStore := store
@@ -34,12 +33,12 @@ func (t *globalTask) Init(ctx topology.SubTopologyContext) error {
 					}
 				}()
 
-				return stateStore.Sync(ctx, stateSynced)
+				return stateStore.Sync(t.task.ctx, stateSynced)
 			})
 		}
 	}()
 
-	return t.subTopology.Init(ctx)
+	return t.subTopology.Init(t.task.ctx)
 }
 
 func (t *globalTask) Start(ctx context.Context, claim kafka.PartitionClaim, s kafka.GroupSession) {

@@ -7,15 +7,12 @@ import (
 
 type Iterator interface {
 	SeekToFirst()
-	//SeekToLast()
 	Next()
-	//Prev()
 	Close()
 	Key() (interface{}, error)
 	Value() (interface{}, error)
 	Valid() bool
 	Error() error
-	//BackendIterator() backend.Iterator
 }
 
 type iterator struct {
@@ -86,8 +83,4 @@ func (i *iterator) Valid() bool {
 
 func (i *iterator) Error() error {
 	return i.i.Error()
-}
-
-func (i *iterator) BackendIterator() backend.Iterator {
-	return i.i
 }

@@ -16,7 +16,7 @@ type Registry interface {
 	RegisterDynamic(name string, lister StateStoresLister) error
 	Create(name string, keyEncoder, valEncoder encoding.Encoder, options ...Option) (Store, error)
 	CreateOrReturn(name string, keyEncoder encoding.Encoder, valEncoder encoding.Encoder, options ...Option) (Store, error)
-	NewIndexedStore(name string, keyEncoder, valEncoder encoding.Encoder, indexes []Index, options ...Option) IndexedStore
+	NewIndexedStore(name string, keyEncoder, valEncoder encoding.Encoder, indexes []IndexBuilder, options ...Option) IndexedStore
 	NewBuilder(name string, keyEncoder, valEncoder encoding.Encoder, options ...Option) StoreBuilder
 	Store(name string) (ReadOnlyStore, error)
 	Builder(name string) (StoreBuilder, error)
@@ -137,7 +137,7 @@ func (r *registry) NewBuilder(name string, keyEncoder, valEncoder encoding.Encod
 	return r.storeBuilders[name]
 }
 
-func (r *registry) NewIndexedStore(name string, keyEncoder, valEncoder encoding.Encoder, indexes []Index, options ...Option) IndexedStore {
+func (r *registry) NewIndexedStore(name string, keyEncoder, valEncoder encoding.Encoder, indexes []IndexBuilder, options ...Option) IndexedStore {
 	if _, ok := r.stores[name]; ok {
 		r.logger.Fatal(fmt.Sprintf(`Store [%s] already exist`, name))
 	}

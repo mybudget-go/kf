@@ -16,6 +16,16 @@ import (
 
 type FailedMessageHandler func(err error, record kafka.Record)
 
+var recordContextTaskIDKey string
+
+type TaskContext struct {
+	context.Context
+}
+
+func (ctx TaskContext) TaskID() string {
+	return ctx.Value(&recordContextTaskIDKey).(string)
+}
+
 type taskOptions struct {
 	buffer               BufferConfig
 	failedMessageHandler FailedMessageHandler
@@ -56,7 +66,6 @@ func WithFailedMessageHandler(handler FailedMessageHandler) TaskOpt {
 
 type TaskID interface {
 	String() string
-	// UniqueID is uniques withing the task manager and
 	UniqueID() string
 	Partition() int32
 	Topics() string
@@ -64,7 +73,8 @@ type TaskID interface {
 
 type Task interface {
 	ID() TaskID
-	Init(ctx topology.SubTopologyContext) error
+	Init() error
+	Restore() error
 	Sync() error
 	Ready() error
 	Start(ctx context.Context, claim kafka.PartitionClaim, groupSession kafka.GroupSession)
@@ -97,15 +107,19 @@ func (t taskId) Partition() int32 {
 }
 
 type task struct {
-	id           TaskID
-	subTopology  topology.SubTopology
-	global       bool
-	session      kafka.GroupSession
-	blockingMode bool
-	logger       log.Logger
-	stopping     chan struct{}
+	id                 TaskID
+	subTopology        topology.SubTopology
+	global             bool
+	session            kafka.GroupSession
+	blockingMode       bool
+	logger             log.Logger
+	processingStopping chan struct{}
+	closing            chan struct{}
+	ready              chan struct{}
 
-	buffer Buffer
+	dataChan chan *Record
+
+	commitBuffer Buffer
 
 	options *taskOptions
 
@@ -132,32 +146,12 @@ func (t *task) ID() TaskID {
 	return t.id
 }
 
-func (t *task) Init(ctx topology.SubTopologyContext) error {
+func (t *task) Restore() error {
 	labels := map[string]string{`topics`: t.ID().Topics(), `partition`: fmt.Sprintf(`%d`, t.ID().Partition())}
 	t.metrics.stateStoreRecoveryLatencyMilliseconds = t.metrics.reporter.Observer(metrics.MetricConf{
 		Path:        `state_store_recovery_latency_milliseconds`,
 		ConstLabels: labels,
 		Labels:      []string{`store`},
-	})
-
-	t.metrics.processLatencyMicroseconds = t.metrics.reporter.Observer(metrics.MetricConf{
-		Path:        `process_latency_microseconds`,
-		ConstLabels: labels,
-	})
-
-	t.metrics.batchProcessLatencyMicroseconds = t.metrics.reporter.Observer(metrics.MetricConf{
-		Path:        `batch_process_latency_microseconds`,
-		ConstLabels: labels,
-		Labels:      []string{`retry_count`},
-	})
-	t.metrics.batchFlushLatencyMicroseconds = t.metrics.reporter.Observer(metrics.MetricConf{
-		Path:        `batch_flush_latency_microseconds`,
-		ConstLabels: labels,
-	})
-
-	t.metrics.batchSize = t.metrics.reporter.Gauge(metrics.MetricConf{
-		Path:        `batch_size`,
-		ConstLabels: labels,
 	})
 
 	// Each StateStore instance in the task has to be restored before the processing start
@@ -167,6 +161,7 @@ func (t *task) Init(ctx topology.SubTopologyContext) error {
 			defer func(start time.Time) {
 				t.metrics.stateStoreRecoveryLatencyMilliseconds.Observe(float64(time.Since(start).Milliseconds()),
 					map[string]string{`store`: changelog.Name()})
+				opts.Ready()
 			}(time.Now())
 
 			stateSynced := make(chan struct{}, 1)
@@ -187,15 +182,64 @@ func (t *task) Init(ctx topology.SubTopologyContext) error {
 				}
 			}()
 
-			return changelog.Sync(ctx, stateSynced)
+			return changelog.Sync(t.ctx, stateSynced)
 		})
 	}
 
-	return t.subTopology.Init(ctx)
+	if err := t.Sync(); err != nil {
+		return errors.Wrapf(err, `state restore error. TaskId:%s`, t.ID())
+	}
+
+	if err := t.Ready(); err != nil {
+		return errors.Wrapf(err,
+			`state restore error occurred while waiting for task to be ready. TaskId:%s`, t.ID())
+	}
+
+	return nil
+}
+
+func (t *task) Init() error {
+	t.metrics.processLatencyMicroseconds = t.metrics.reporter.Observer(metrics.MetricConf{
+		Path:        `process_latency_microseconds`,
+		ConstLabels: map[string]string{`partition`: fmt.Sprintf(`%d`, t.ID().Partition())},
+		Labels:      []string{`topic`},
+	})
+
+	labels := map[string]string{`topics`: t.ID().Topics(), `partition`: fmt.Sprintf(`%d`, t.ID().Partition())}
+	t.metrics.batchProcessLatencyMicroseconds = t.metrics.reporter.Observer(metrics.MetricConf{
+		Path:        `batch_process_latency_microseconds`,
+		ConstLabels: labels,
+	})
+	t.metrics.batchFlushLatencyMicroseconds = t.metrics.reporter.Observer(metrics.MetricConf{
+		Path:        `batch_flush_latency_microseconds`,
+		ConstLabels: labels,
+	})
+
+	t.metrics.batchSize = t.metrics.reporter.Gauge(metrics.MetricConf{
+		Path:        `batch_size`,
+		ConstLabels: labels,
+	})
+
+	if err := t.subTopology.Init(t.ctx); err != nil {
+		return errors.Wrapf(err, `sub-topology init failed. TaskId:%s`, t.ID())
+	}
+
+	// Init and start commitBuffer
+	if err := t.commitBuffer.Init(); err != nil {
+		return errors.Wrap(err, `commitBuffer init failed`)
+	}
+
+	go t.start()
+
+	return nil
 }
 
 func (t *task) Sync() error {
 	return t.runGroup.Run()
+}
+
+func (t *task) Chan() chan *Record {
+	return t.dataChan
 }
 
 func (t *task) Ready() error {
@@ -209,11 +253,13 @@ func (t *task) Ready() error {
 
 func (t *task) process(record *Record) error {
 	defer func(since time.Time) {
-		t.metrics.processLatencyMicroseconds.Observe(float64(time.Since(since).Microseconds()), nil)
+		t.metrics.processLatencyMicroseconds.Observe(float64(time.Since(since).Microseconds()),
+			map[string]string{`topic`: record.Topic()})
 	}(time.Now())
 
+	ctx := TaskContext{context.WithValue(topology.NewRecordContext(record), &recordContextTaskIDKey, t.ID().String())}
 	_, _, _, err := t.subTopology.Source(record.Topic()).
-		Run(topology.NewRecordContext(record), record.Key(), record.Value())
+		Run(ctx, record.Key(), record.Value())
 	if err != nil {
 		// if this is a kafka producer error, return it(will be retried), otherwise ignore and exclude from
 		// re-processing(only the kafka errors can be retried here)
@@ -230,6 +276,8 @@ func (t *task) process(record *Record) error {
 		t.options.failedMessageHandler(err, record)
 		record.ignore = true
 
+		t.logger.ErrorContext(ctx, fmt.Sprintf(`record %s process failed due to %s`, record, err))
+
 		return err
 	}
 
@@ -243,12 +291,10 @@ func (t *task) Start(ctx context.Context, claim kafka.PartitionClaim, _ kafka.Gr
 	t.consumerLoops.Add(1)
 
 	go func() {
-		<-t.stopping
+		<-t.processingStopping
 		t.logger.Info(fmt.Sprintf(`Stop signal received. Stopping message loop %s`, claim.TopicPartition()))
 		stopping <- struct{}{}
 	}()
-
-	var once sync.Once
 
 MAIN:
 	for {
@@ -261,53 +307,128 @@ MAIN:
 				break MAIN
 			}
 
+			t.dataChan <- NewTaskRecord(record)
+		}
+	}
+
+	t.consumerLoops.Done()
+	t.logger.Error(fmt.Sprintf(`Message loop stopped for %s`, claim.TopicPartition()))
+}
+
+func (t *task) start() {
+	stopping := make(chan struct{}, 1)
+	go func() {
+		<-t.processingStopping
+		t.logger.Info(fmt.Sprintf(`Stop signal received. Stopping processing loop %s`, t.ID()))
+		stopping <- struct{}{}
+	}()
+
+	var once sync.Once
+	tick := time.NewTicker(t.options.buffer.FlushInterval)
+
+MAIN:
+	for {
+		select {
+		case <-stopping:
+			break MAIN
+		case <-tick.C:
+			if err := t.commitBuffer.Flush(); err != nil {
+				t.reProcessCommitBuffer(err, nil)
+			}
+		case record := <-t.dataChan:
 			once.Do(func() {
 				t.logger.Info(fmt.Sprintf(`Starting offset %s`, record))
 			})
-			if err := t.buffer.Add(NewTaskRecord(record)); err != nil {
+
+			// Process the record
+			taskRecord := NewTaskRecord(record)
+			if err := t.process(taskRecord); err != nil {
+				// Ignored recodes (due to a processing error) cannot be retried
+				if !record.ignore {
+					if err := t.commitBuffer.Add(taskRecord); err != nil {
+						t.options.failedMessageHandler(err, record)
+					}
+				}
+
+				t.reProcessCommitBuffer(err, nil)
+				continue
+			}
+
+			if err := t.commitBuffer.Add(taskRecord); err != nil {
 				t.options.failedMessageHandler(err, record)
 			}
 		}
 	}
 
-	t.consumerLoops.Done()
-	t.logger.Info(fmt.Sprintf(`Message loop stopped for %s`, claim.TopicPartition()))
+	close(t.dataChan)
+
+	t.logger.Info(fmt.Sprintf(`Processing loop stopped for %s`, t.ID()))
+}
+
+func (t *task) reProcessCommitBuffer(err error, records []*Record) {
+	t.logger.Warn(fmt.Sprintf(`Reprocessing commit buffer due to %s`, err))
+
+	if len(records) < 1 {
+		records = make([]*Record, len(t.commitBuffer.Records()))
+		copy(records, t.commitBuffer.Records())
+	}
+
+	if rsetErr := t.commitBuffer.Reset(err); rsetErr != nil {
+		t.logger.Warn(`Buffer reset failed while reprocessing batch, retrying ...`)
+		t.reProcessCommitBuffer(rsetErr, records)
+		return
+	}
+
+	for _, record := range records {
+		if record.ignore {
+			continue
+		}
+
+		if processErr := t.process(record); processErr != nil {
+			t.reProcessCommitBuffer(processErr, records)
+			return
+		}
+
+		if err := t.commitBuffer.Add(record); err != nil {
+			t.options.failedMessageHandler(err, record)
+		}
+	}
 }
 
 func (t *task) Stop() error {
-	// close sub topology
-	if err := t.subTopology.Close(); err != nil {
-		panic(fmt.Sprintf(`sub-topology close error due to %s`, err))
-	}
-
 	t.shutdown(nil)
+	<-t.closing
 	return nil
 }
 
 func (t *task) shutdown(err error) {
 	t.shutDownOnce.Do(func() {
+		// close sub topology
+		if err := t.subTopology.Close(); err != nil {
+			panic(fmt.Sprintf(`sub-topology close error due to %s`, err))
+		}
+
 		if err != nil {
 			t.logger.Info(fmt.Sprintf(`Stopping..., due to %s`, err))
 		} else {
 			t.logger.Info(`Stopping...`)
 		}
+
 		defer t.logger.Info(`Stopped`)
 
 		t.runGroup.Stop()
 
 		if t.blockingMode {
 			t.logger.Info(`Waiting until processing stopped...`)
-			close(t.stopping)
+			close(t.processingStopping)
 			t.consumerLoops.Wait()
 			t.logger.Info(`Processing stopped`)
 		}
 
-		if err := t.buffer.Close(); err != nil {
+		// Wait until processing loop exit
+		if err := t.commitBuffer.Close(); err != nil {
 			t.logger.Warn(err)
 		}
-
-		// TODO complete this
-		// if err := t.subTopology.Close(); err != nil{}
 
 		// Close all the state stores
 		wg := &sync.WaitGroup{}
@@ -325,63 +446,14 @@ func (t *task) shutdown(err error) {
 
 		if t.producer != nil {
 			if err := t.producer.Close(); err != nil {
-				t.logger.Error(err)
+				t.logger.Error(fmt.Sprintf(`Producer close error due to %s`, err))
 			}
 		}
+
+		close(t.closing)
 	})
 }
 
 func (t *task) Store(name string) topology.StateStore {
 	return t.subTopology.StateStores()[name]
-}
-
-func (t *task) onFlush(records []*Record) error {
-	return t.processBatch(nil, records)
-}
-
-func (t *task) processBatch(err error, records []*Record) error {
-	// The processing has to stop if the task status is shutting down
-
-	// Purge the store cache before the processing starts. This will clear out any half processed states from state stores
-	for _, store := range t.subTopology.StateStores() {
-		store.Purge()
-	}
-
-	if fatalErr, ok := err.(kafka.ProducerErr); ok {
-		t.logger.Warn(fmt.Sprintf(`Fatal error %s while processing record batch`, fatalErr))
-		if fatalErr.RequiresRestart() {
-			t.logger.Warn(fmt.Sprintf(`Restarting producer due to %s`, fatalErr))
-			if err := t.producer.Restart(); err != nil {
-				log.Fatal(err) // TODO handle error
-			}
-		}
-	}
-
-	for _, record := range records {
-		// ignore messages from reprocessing if they marked as excluded
-		if record.ignore {
-			continue
-		}
-
-		if err := t.process(record); err != nil {
-			// if this a process error, abort the batch and then exclude the record and put into a errorHandler
-			// and then retry the batch without the failed message
-			t.logger.WarnContext(record.Ctx(), fmt.Sprintf(`Batch process failed due to %s, retrying...`, err))
-			return t.processBatch(err, records)
-		}
-	}
-
-	// Flush(Commit) all the stores in the Task
-	for _, store := range t.subTopology.StateStores() {
-		if err := store.Flush(); err != nil {
-			return err // TODO wrap error
-		}
-	}
-
-	t.logger.Info(fmt.Sprintf(
-		`Transaction committed(offset range[%d-%d])`,
-		records[0].Offset(),
-		records[len(records)-1].Offset()))
-
-	return nil
 }

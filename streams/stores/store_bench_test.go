@@ -3,20 +3,14 @@ package stores
 import (
 	"context"
 	"github.com/gmbyapa/kstream/backend"
-	"github.com/gmbyapa/kstream/backend/badger"
-	"github.com/gmbyapa/kstream/backend/memory"
+	"github.com/gmbyapa/kstream/backend/mock"
 	"github.com/gmbyapa/kstream/streams/encoding"
 	"math/rand"
 	"testing"
 )
 
-func makeTestBackend() backend.Backend {
-	conf := badger.NewConfig()
-	conf.InMemory = true
-	backend := badger.NewBadgerBackend(`mock`, conf)
-	backend = memory.NewMemoryBackend(`mock`, memory.NewConfig())
-
-	return backend
+func makeTestBackend(name string) backend.Backend {
+	return mock.NewMockBackend(name, 0)
 }
 
 func makeTestBenchStore(b *testing.B) Store {
@@ -24,7 +18,7 @@ func makeTestBenchStore(b *testing.B) Store {
 		`test_store`,
 		encoding.IntEncoder{},
 		encoding.StringEncoder{},
-		WithBackend(makeTestBackend()))
+		WithBackend(makeTestBackend(`test_store`)))
 	if err != nil {
 		b.Error(err)
 	}

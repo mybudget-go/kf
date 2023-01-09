@@ -32,7 +32,9 @@ func (id NodeId) SubTopologyId() string {
 }
 
 type NodeInfo interface {
+	// Id returns a unique node id within the topology
 	Id() NodeId
+	// Type returns type of the node eg: Joiner, Flatmap
 	Type() Type
 	ReadsFrom() []string
 	WritesAt() []string

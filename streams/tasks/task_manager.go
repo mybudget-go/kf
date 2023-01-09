@@ -19,20 +19,19 @@ type TaskManager interface {
 	RemoveTask(id TaskID) error
 	Task(id TaskID) (Task, error)
 	StoreInstances(name string) []topology.StateStore
-	StopAll() error
 }
 
 type taskManager struct {
 	logger            log.Logger
-	tasks             map[string]Task
+	tasks             *sync.Map
 	partitionConsumer kafka.PartitionConsumer
 	builderCtx        topology.BuilderContext
 	transactional     bool
 	topicConfigs      map[string]*kafka.Topic
 
 	ctxCancel context.CancelFunc
-	mu        sync.Mutex
-	taskOpts  []TaskOpt
+	//mu        sync.Mutex
+	taskOpts []TaskOpt
 }
 
 func NewTaskManager(
@@ -50,7 +49,7 @@ func NewTaskManager(
 	}
 
 	return &taskManager{
-		tasks:             map[string]Task{},
+		tasks:             &sync.Map{},
 		builderCtx:        builderCtx,
 		partitionConsumer: partitionConsumer,
 		logger:            logger,
@@ -69,6 +68,14 @@ func (t *taskManager) AddGlobalTask(ctx topology.BuilderContext, id TaskID, tp t
 }
 
 func (t *taskManager) addTask(ctx topology.BuilderContext, id TaskID, subTopology topology.SubTopologyBuilder, session kafka.GroupSession) (Task, error) {
+	// If task already exists, close it
+	if tsk, ok := t.tasks.Load(id.String()); ok {
+		t.logger.Warn(fmt.Sprintf(`task %s already exists. closing...`, id))
+		if err := tsk.(Task).Stop(); err != nil {
+			return nil, errors.Wrap(err, `task close error`)
+		}
+	}
+
 	logger := t.logger.NewLog(log.Prefixed(id.String()))
 	producer, err := ctx.ProducerBuilder()(func(config *kafka.ProducerConfig) {
 		txID := fmt.Sprintf(`%s-%s`, ctx.ApplicationId(), id.UniqueID())
@@ -97,20 +104,23 @@ func (t *taskManager) addTask(ctx topology.BuilderContext, id TaskID, subTopolog
 	taskOpts := new(taskOptions)
 	taskOpts.setDefault()
 	taskOpts.failedMessageHandler = func(err error, record kafka.Record) {
-		t.logger.Error(fmt.Sprintf(`Message %s failed due to %s`, record, err))
+		t.logger.ErrorContext(record.Ctx(), fmt.Sprintf(`Message %s failed due to %s`, record, err))
 	}
 	taskOpts.apply(t.taskOpts...)
 
 	tsk := &task{
-		id:          id,
-		logger:      logger,
-		session:     session,
-		subTopology: subTp,
-		producer:    producer,
-		stopping:    make(chan struct{}),
-		//stopSync:    make(chan struct{}, 1),
-		runGroup: async.NewRunGroup(logger),
-		options:  taskOpts,
+		id:                 id,
+		logger:             logger,
+		ctx:                topologyCtx,
+		session:            session,
+		subTopology:        subTp,
+		producer:           producer,
+		processingStopping: make(chan struct{}),
+		closing:            make(chan struct{}),
+		ready:              make(chan struct{}),
+		dataChan:           make(chan *Record, 10),
+		runGroup:           async.NewRunGroup(logger),
+		options:            taskOpts,
 	}
 
 	tsk.metrics.reporter = ctx.MetricsReporter().Reporter(metrics.ReporterConf{
@@ -121,43 +131,23 @@ func (t *taskManager) addTask(ctx topology.BuilderContext, id TaskID, subTopolog
 		},
 	})
 
-	tsk.buffer = newBuffer(
+	tsk.commitBuffer = newCommitBuffer(
 		tsk.options.buffer,
-		tsk.onFlush,
+		subTp,
+		producer,
+		session,
+		nil,
 		logger.NewLog(log.Prefixed(`Buffer`)),
 		tsk.metrics.reporter,
 	)
 
 	var task Task = tsk
 
-	if t.transactional {
-		tsk.metrics.reporter = ctx.MetricsReporter().Reporter(metrics.ReporterConf{
-			Subsystem: "task_manager_task",
-			ConstLabels: map[string]string{
-				`task_type`: `transactional_task`,
-				`task_id`:   id.String(),
-			},
-		})
-		kTransactionalTask := &transactionalTask{
-			task:     tsk,
-			producer: tsk.producer.(kafka.TransactionalProducer),
-		}
-		kTransactionalTask.buffer = newBuffer(
-			kTransactionalTask.options.buffer,
-			kTransactionalTask.onFlush,
-			logger.NewLog(log.Prefixed(`Buffer`)),
-			tsk.metrics.reporter,
-		)
-		task = kTransactionalTask
+	if err := task.Restore(); err != nil {
+		return nil, errors.Wrap(err, `task restore failed`)
 	}
 
-	if err := task.Init(topologyCtx); err != nil {
-		return nil, err
-	}
-
-	t.mu.Lock()
-	t.tasks[id.String()] = task
-	t.mu.Unlock()
+	t.tasks.Store(id.String(), task)
 
 	return task, nil
 }
@@ -185,19 +175,20 @@ func (t *taskManager) addGlobalTask(ctx topology.BuilderContext, id TaskID, subT
 	taskOpts := new(taskOptions)
 	taskOpts.setDefault()
 	taskOpts.failedMessageHandler = func(err error, record kafka.Record) {
-		t.logger.Error(fmt.Sprintf(`Message %s failed due to %s`, record, err))
+		t.logger.ErrorContext(record.Ctx(), fmt.Sprintf(`Message %s failed due to %s`, record, err))
 	}
 	taskOpts.apply(t.taskOpts...)
 
 	tsk := &task{
-		id:          id,
-		logger:      logger,
-		subTopology: subTp,
-		global:      true,
-		ctx:         topologyCtx,
-		stopping:    make(chan struct{}, 1),
-		runGroup:    async.NewRunGroup(logger),
-		options:     taskOpts,
+		id:                 id,
+		logger:             logger,
+		subTopology:        subTp,
+		global:             true,
+		ctx:                topologyCtx,
+		processingStopping: make(chan struct{}),
+		closing:            make(chan struct{}),
+		runGroup:           async.NewRunGroup(logger),
+		options:            taskOpts,
 	}
 
 	tsk.metrics.reporter = ctx.MetricsReporter().Reporter(metrics.ReporterConf{
@@ -210,30 +201,26 @@ func (t *taskManager) addGlobalTask(ctx topology.BuilderContext, id TaskID, subT
 
 	globalKTask := &globalTask{tsk}
 
-	if err := globalKTask.Init(topologyCtx); err != nil {
+	if err := globalKTask.Init(); err != nil {
 		return nil, err
 	}
 
-	t.mu.Lock()
-	t.tasks[id.String()] = globalKTask
-	t.mu.Unlock()
+	t.tasks.Store(id.String(), globalKTask)
 
 	return globalKTask, nil
 }
 
 func (t *taskManager) RemoveTask(id TaskID) error {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	task, ok := t.tasks[id.String()]
+	tsk, ok := t.tasks.Load(id.String())
 	if !ok {
 		return errors.Errorf(`task [%s] doesn't exists`, id)
 	}
 
-	if err := task.Stop(); err != nil {
+	if err := tsk.(Task).Stop(); err != nil {
 		return errors.Wrap(err, `task stop failed`)
 	}
 
-	delete(t.tasks, id.String())
+	t.tasks.Delete(id.String())
 
 	t.logger.Info(fmt.Sprintf(`%s successfully removed`, id))
 
@@ -241,37 +228,12 @@ func (t *taskManager) RemoveTask(id TaskID) error {
 }
 
 func (t *taskManager) Task(id TaskID) (Task, error) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	tsk, ok := t.tasks[id.String()]
+	tsk, ok := t.tasks.Load(id.String())
 	if !ok {
 		return nil, errors.Errorf(`task [%s] doesn't exists`, id)
 	}
 
-	return tsk, nil
-}
-
-func (t *taskManager) StopAll() error {
-	t.logger.Info(`Running tasks stopping...`)
-	defer t.logger.Info(`Running tasks stopped`)
-
-	wg := &sync.WaitGroup{}
-	wg.Add(len(t.tasks))
-	for _, tsk := range t.tasks {
-		go func(wg *sync.WaitGroup, tsk Task) {
-			defer async.LogPanicTrace(t.logger)
-
-			if err := tsk.Stop(); err != nil {
-				panic(err)
-			}
-
-			wg.Done()
-		}(wg, tsk)
-	}
-
-	wg.Wait()
-
-	return nil
+	return tsk.(Task), nil
 }
 
 func (t *taskManager) NewTaskId(prefix string, tp kafka.TopicPartition) TaskID {
@@ -279,8 +241,6 @@ func (t *taskManager) NewTaskId(prefix string, tp kafka.TopicPartition) TaskID {
 		prefix = fmt.Sprintf(`%s-`, prefix)
 	}
 
-	t.mu.Lock()
-	defer t.mu.Unlock()
 	return taskId{
 		prefix:    fmt.Sprintf(`%sTask(%s)`, prefix, tp),
 		partition: tp.Partition,
@@ -289,11 +249,12 @@ func (t *taskManager) NewTaskId(prefix string, tp kafka.TopicPartition) TaskID {
 
 func (t *taskManager) StoreInstances(name string) []topology.StateStore {
 	var stors []topology.StateStore
-	for _, task := range t.tasks {
-		if stor := task.Store(name); stor != nil {
+	t.tasks.Range(func(key, value interface{}) bool {
+		if stor := value.(Task).Store(name); stor != nil {
 			stors = append(stors, stor)
 		}
-	}
+		return true
+	})
 
 	return stors
 }

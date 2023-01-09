@@ -313,7 +313,7 @@ func (g *graphViz) applyAttributes(node NodeBuilder, attrs map[string]string) {
 		attrs[`style`] = `filled`
 
 	default:
-		attrs[`label`] = g.nodeLabel(node, `Custom`)
+		attrs[`label`] = g.nodeLabel(node, node.Type().Name)
 		attrs[`fillcolor`] = `slateblue4`
 		attrs[`fontcolor`] = `grey100`
 		attrs[`style`] = `filled`

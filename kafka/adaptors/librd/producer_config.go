@@ -51,7 +51,7 @@ func (conf *ProducerConfig) setUp() error {
 			panic(err)
 		}
 
-		//TODO use this to recreate producer failure scenarios
+		//TODO use this to recreate producer transaction timeout scenarios
 		//if err := conf.Librd.SetKey(`transaction.timeout.ms`, 2000); err != nil {
 		//	panic(err)
 		//}

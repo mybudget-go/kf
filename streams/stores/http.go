@@ -339,6 +339,82 @@ func MakeEndpoints(host string, registry Registry, logger log.Logger) {
 
 	}).Methods(http.MethodGet)
 
+	r.HandleFunc(`/stores/{store}/indexes/{index}/{key}`, func(writer http.ResponseWriter, request *http.Request) {
+
+		writer.Header().Set("Content-Type", "application/json")
+		writer.Header().Set("Access-Control-Allow-Origin", "*")
+		vars := mux.Vars(request)
+		storeName, ok := vars[`store`]
+		if !ok {
+			logger.Error(`unknown route parameter`)
+			return
+		}
+
+		indexName, ok := vars[`index`]
+		if !ok {
+			logger.Error(`route param index does not exist`)
+			return
+		}
+
+		indexKey, ok := vars[`key`]
+		if !ok {
+			logger.Error(`route param index key does not exist`)
+			return
+		}
+
+		if !h.storeExist(storeName, registry) {
+			res := h.encodeError(errors.New(`store dose not exist`))
+			if _, err := writer.Write(res); err != nil {
+				logger.Error(err)
+				return
+			}
+		}
+
+		if !h.indexExist(indexName, registry) {
+			res := h.encodeError(errors.New(`index dose not exist`))
+			if _, err := writer.Write(res); err != nil {
+				logger.Error(err)
+				return
+			}
+		}
+
+		store, err := registry.Store(storeName)
+		if err != nil {
+			res := h.encodeError(err)
+			if _, err := writer.Write(res); err != nil {
+				logger.Error(err)
+				return
+			}
+			return
+		}
+
+		indexdStore, ok := store.(IndexedStore)
+		if !ok {
+			res := h.encodeError(errors.New(`not an IndexedStore`))
+			if _, err := writer.Write(res); err != nil {
+				logger.Error(err)
+				return
+			}
+			return
+		}
+
+		idx, err := indexdStore.GetIndexedRecords(request.Context(), indexName, indexKey)
+		if err != nil {
+			res := h.encodeError(err)
+			if _, err := writer.Write(res); err != nil {
+				logger.Error(err)
+				return
+			}
+			return
+		}
+
+		err = h.encodeAll(writer, idx, indexdStore)
+		if err != nil {
+			logger.Error(err)
+		}
+
+	}).Methods(http.MethodGet)
+
 	r.HandleFunc(`/stores/{store}/{key}`, func(writer http.ResponseWriter, request *http.Request) {
 		writer.Header().Set("Content-Type", "application/json")
 

@@ -497,6 +497,7 @@ func (k *kStream) Through(topic string, options ...DslOption) Stream {
 }
 
 func (k *kStream) Merge(stream Stream) Stream {
+	k.source().ShouldCoPartitionedWith(stream.source())
 	// if merging streams topology is different to current one extract and import that first
 	if k.stpBuilder.Id() != stream.topology().Id() {
 		k.stpBuilder.MergeSubTopology(stream.topology())
@@ -538,6 +539,7 @@ func (k *kStream) Repartition(topic string, opts ...RepartitionOpt) Stream {
 		ConsumeWithValEncoder(k.valEncoder()),
 		ConsumeWithAutoTopicCreateEnabled(
 			WithReplicaCount(k.builder.config.InternalTopicsDefaultReplicaCount),
+			PartitionAs(k.source()),
 		),
 	)
 

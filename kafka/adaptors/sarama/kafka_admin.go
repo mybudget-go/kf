@@ -13,6 +13,8 @@ import (
 	"github.com/gmbyapa/kstream/kafka"
 	"github.com/gmbyapa/kstream/pkg/errors"
 	"github.com/tryfix/log"
+	"net"
+	"sync"
 	"time"
 )
 
@@ -48,6 +50,9 @@ type kAdmin struct {
 	admin            sarama.ClusterAdmin
 	logger           log.Logger
 	tempTopicConfigs map[string]*kafka.Topic
+	adminConfig      *sarama.Config
+	bootstrapServer  []string
+	mu               sync.RWMutex
 }
 
 func NewAdmin(bootstrapServer []string, options ...AdminOption) (*kAdmin, error) {
@@ -66,7 +71,23 @@ func NewAdmin(bootstrapServer []string, options ...AdminOption) (*kAdmin, error)
 		admin:            admin,
 		logger:           logger,
 		tempTopicConfigs: map[string]*kafka.Topic{},
+		adminConfig:      saramaConfig,
+		bootstrapServer:  bootstrapServer,
+		mu:               sync.RWMutex{},
 	}, nil
+}
+
+func (a *kAdmin) reconnect() error {
+	admin, err := sarama.NewClusterAdmin(a.bootstrapServer, a.adminConfig)
+	if err != nil {
+		return errors.Wrap(err, `admin client failed`)
+	}
+
+	a.mu.Lock()
+	a.mu.Unlock()
+	a.admin = admin
+
+	return nil
 }
 
 func (a *kAdmin) FetchInfo(topics []string) (map[string]*kafka.Topic, error) {
@@ -74,8 +95,22 @@ func (a *kAdmin) FetchInfo(topics []string) (map[string]*kafka.Topic, error) {
 		return nil, errors.New(`empty topic list`)
 	}
 
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+
+	var reconCount int
+	// This to prevent https://github.com/Shopify/sarama/issues/2215 due to broker connections.max.idle.ms
+RETRY:
 	topicMeta, err := a.admin.DescribeTopics(topics)
 	if err != nil {
+		if _, ok := err.(*net.OpError); ok && reconCount < 3 {
+			if recErr := a.reconnect(); recErr != nil {
+				return nil, errors.Wrap(recErr, `cannot get metadata`)
+			}
+			reconCount++
+			goto RETRY
+		}
+
 		return nil, errors.Wrap(err, `cannot get metadata`)
 	}
 
@@ -119,6 +154,9 @@ func (a *kAdmin) FetchInfo(topics []string) (map[string]*kafka.Topic, error) {
 }
 
 func (a *kAdmin) ListTopics() ([]string, error) {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+
 	topics, err := a.admin.ListTopics()
 	if err != nil {
 		return nil, errors.Wrap(err, `cannot get metadata`)
@@ -134,6 +172,9 @@ func (a *kAdmin) ListTopics() ([]string, error) {
 }
 
 func (a *kAdmin) CreateTopics(topics []*kafka.Topic) error {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+
 	var tpNames []string
 	for _, info := range topics {
 		tpNames = append(tpNames, info.Name)
@@ -198,6 +239,9 @@ func (a *kAdmin) DeleteTopics(topics []string) error {
 	if len(topics) < 1 {
 		return nil
 	}
+
+	a.mu.RLock()
+	defer a.mu.RUnlock()
 
 	for _, topic := range topics {
 		err := a.admin.DeleteTopic(topic)

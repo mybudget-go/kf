@@ -15,13 +15,27 @@ type RecordVersionWriter func(ctx context.Context, version int64, vIn interface{
 
 type Builder func(name string, keyEncoder, valEncoder encoding.Encoder, options ...Option) (Store, error)
 
-type IndexedStoreBuilder func(name string, keyEncoder, valEncoder encoding.Encoder, indexes []Index, options ...Option) (IndexedStore, error)
+type IndexedStoreBuilder func(name string, keyEncoder, valEncoder encoding.Encoder, indexes []IndexBuilder, options ...Option) (IndexedStore, error)
 
 type Store interface {
 	Backend() backend.Backend
 	Set(ctx context.Context, key, value interface{}, expiry time.Duration) error
 	Delete(ctx context.Context, key interface{}) error
+	Flush() error
+	Cache() StoreCache
 	ReadOnlyStore
+}
+
+type StoreCache interface {
+	Get(ctx context.Context, key interface{}) (value interface{}, err error)
+	Iterator(ctx context.Context) (Iterator, error)
+	PrefixedIterator(ctx context.Context, keyPrefix interface{}, prefixEncoder encoding.Encoder) (Iterator, error)
+	Set(ctx context.Context, key, value interface{}, expiry time.Duration) error
+	Delete(ctx context.Context, key interface{}) error
+	Flush() error
+	Close() error
+	Reset()
+	Backend() backend.Cache
 }
 
 type ReadOnlyStore interface {
@@ -59,14 +73,17 @@ func NewStore(name string, keyEncoder encoding.Encoder, valEncoder encoding.Enco
 		opts.backend = bk
 	}
 
-	store := &store{
+	var stor Store
+
+	rwStore := &store{
 		name:       name,
 		keyEncoder: keyEncoder,
 		valEncoder: valEncoder,
 		opts:       opts,
 	}
+	stor = rwStore
 
-	return store, nil
+	return stor, nil
 }
 
 func (s *store) Name() string {
@@ -90,13 +107,12 @@ func (s *store) Backend() backend.Backend {
 }
 
 func (s *store) Set(ctx context.Context, key interface{}, value interface{}, expiry time.Duration) error {
-
 	k, err := s.keyEncoder.Encode(key)
 	if err != nil {
 		return errors.Wrap(err, fmt.Sprintf(`store [%s] key encode error`, s.name))
 	}
 
-	// if value is null remove from store (tombstone)
+	// if value is null remove from store (tombstone) TODO may be we dont need it here
 	if value == nil {
 		return s.opts.backend.Delete(k)
 	}
@@ -110,7 +126,6 @@ func (s *store) Set(ctx context.Context, key interface{}, value interface{}, exp
 }
 
 func (s *store) Get(ctx context.Context, key interface{}) (value interface{}, err error) {
-
 	k, err := s.keyEncoder.Encode(key)
 	if err != nil {
 		return nil, errors.Wrap(err, fmt.Sprintf(`store [%s] key encode err `, s.name))
@@ -171,4 +186,17 @@ func (s *store) Delete(ctx context.Context, key interface{}) (err error) {
 
 func (s *store) Close() error {
 	return s.opts.backend.Close()
+}
+
+func (s *store) Flush() error {
+	return s.opts.backend.Flush()
+}
+
+func (s *store) Cache() StoreCache {
+	return &Cache{
+		backendCache: s.Backend().(backend.CacheableBackend).Cache(),
+		keyEncoder:   s.keyEncoder,
+		valEncoder:   s.valEncoder,
+		storeName:    s.name,
+	}
 }

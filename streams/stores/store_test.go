@@ -3,7 +3,6 @@ package stores
 import (
 	"context"
 	"fmt"
-	"github.com/gmbyapa/kstream/backend/badger"
 	"github.com/gmbyapa/kstream/streams/encoding"
 	"reflect"
 	"sort"
@@ -12,13 +11,11 @@ import (
 )
 
 func makeTestStore(t *testing.T, expiry time.Duration) Store {
-	conf := badger.NewConfig()
-	conf.InMemory = true
 	stor, err := NewStore(
 		`test_store`,
 		encoding.StringEncoder{},
 		encoding.StringEncoder{},
-		WithBackend(badger.NewBadgerBackend(`test_backend`, conf)))
+		WithBackend(makeTestBackend(`test_backend`)))
 	if err != nil {
 		t.Error(err)
 	}

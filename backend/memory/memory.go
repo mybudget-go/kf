@@ -61,6 +61,14 @@ type memory struct {
 	}
 }
 
+func (m *memory) Flush() error {
+	panic("not yet supported")
+}
+
+func (m *memory) SetAll(kayVals []backend.KeyVal, expiry time.Duration) error {
+	panic("not yet supported")
+}
+
 func Builder(config *config) backend.Builder {
 	return func(name string) (backend backend.Backend, err error) {
 		return NewMemoryBackend(name, config), nil

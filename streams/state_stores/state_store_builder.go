@@ -2,7 +2,6 @@ package state_stores
 
 import (
 	"fmt"
-
 	"github.com/gmbyapa/kstream/pkg/errors"
 	"github.com/gmbyapa/kstream/streams/encoding"
 	"github.com/gmbyapa/kstream/streams/stores"
@@ -130,7 +129,7 @@ func (d *stateStoreBuilder) ValEncoder() encoding.Encoder {
 
 func (d *stateStoreBuilder) Build(ctx topology.SubTopologyContext) (topology.StateStore, error) {
 	storeName := d.NameFormatter(ctx)(d.store.Name())
-	store, err := d.store.Build(storeName, d.options...)
+	store, err := d.store.Build(storeName, append(d.options, stores.WithCachingEnabled())...)
 	if err != nil {
 		return nil, errors.Wrap(err, `store build failed`)
 	}
@@ -143,7 +142,7 @@ func (d *stateStoreBuilder) Build(ctx topology.SubTopologyContext) (topology.Sta
 	stor := &StateStore{
 		Store:           store,
 		ChangelogSyncer: syncer,
-		cache:           newCache(),
+		cache:           store.Cache(),
 	}
 
 	if !d.changelog.loggingEnabled {

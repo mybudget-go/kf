@@ -6,6 +6,14 @@ import (
 	"time"
 )
 
+type RecordMeta struct {
+	Topic     string
+	Partition int32
+	Offset    int64
+	Timestamp time.Time
+	Headers   RecordHeaders
+}
+
 type Record interface {
 	Ctx() context.Context
 	Key() []byte

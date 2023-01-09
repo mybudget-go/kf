@@ -96,7 +96,7 @@ type StateStore interface {
 	stores.Store
 	// Flush flashes the records in buffer to stores.Store
 	Flush() error
-	Purge()
+	ResetCache()
 	ChangelogSyncer
 }
 

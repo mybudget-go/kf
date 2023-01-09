@@ -1,8 +1,11 @@
 package tasks
 
 import (
+	"context"
 	"fmt"
-	"github.com/gmbyapa/kstream/pkg/async"
+	"github.com/gmbyapa/kstream/kafka"
+	"github.com/gmbyapa/kstream/pkg/errors"
+	"github.com/gmbyapa/kstream/streams/topology"
 	"github.com/tryfix/metrics"
 	"sync"
 	"time"
@@ -13,9 +16,12 @@ import (
 type OnFlush func(records []*Record) error
 
 type Buffer interface {
+	Init() error
 	Add(record *Record) error
 	Flush() error
 	Close() error
+	Reset(dueTo error) error
+	Records() []*Record
 }
 
 type BufferConfig struct {
@@ -28,14 +34,15 @@ type BufferConfig struct {
 	FlushInterval time.Duration
 }
 
-type buffer struct {
-	onFlush OnFlush
-	size    int
-	records []*Record
+type commitBuffer struct {
+	records   []*Record
+	offsetMap map[string]kafka.ConsumerOffset
 
-	tick              *time.Ticker
-	mu                sync.Mutex
-	stopping, stopped chan struct{}
+	mu *sync.Mutex
+
+	producer    kafka.TransactionalProducer
+	subTopology topology.SubTopology
+	session     kafka.GroupSession
 
 	metrics struct {
 		batchSize metrics.Counter
@@ -44,89 +51,158 @@ type buffer struct {
 	logger log.Logger
 }
 
-func newBuffer(config BufferConfig, onFlush OnFlush, logger log.Logger, reporter metrics.Reporter) *buffer {
-	buf := &buffer{
-		size:     config.Size,
-		mu:       sync.Mutex{},
-		tick:     time.NewTicker(config.FlushInterval),
-		stopping: make(chan struct{}, 1),
-		stopped:  make(chan struct{}, 1),
-		onFlush:  onFlush,
-		logger:   logger,
+func newCommitBuffer(config BufferConfig, topology topology.SubTopology, producer kafka.Producer, session kafka.GroupSession, onFlush OnFlush, logger log.Logger, reporter metrics.Reporter) *commitBuffer {
+	buf := &commitBuffer{
+		mu:        &sync.Mutex{},
+		offsetMap: map[string]kafka.ConsumerOffset{},
+		logger:    logger,
+
+		producer:    producer.(kafka.TransactionalProducer),
+		subTopology: topology,
+		session:     session,
 	}
 
 	buf.metrics.batchSize = reporter.Counter(metrics.MetricConf{
 		Path: `batch_size`,
 	})
 
-	go buf.run()
-
 	return buf
 }
 
-func (b *buffer) Add(record *Record) error {
-	b.mu.Lock()
-	defer b.mu.Unlock()
+func (b *commitBuffer) Init() error {
+	if err := b.producer.InitTransactions(context.Background()); err != nil {
+		panic(err)
+	}
 
-	b.records = append(b.records, record)
-
-	if len(b.records) == b.size {
-		return b.flush()
+	if err := b.producer.BeginTransaction(); err != nil {
+		panic(err)
 	}
 
 	return nil
 }
 
-func (b *buffer) Flush() error {
+func (b *commitBuffer) Add(record *Record) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	b.records = append(b.records, record)
+	b.offsetMap[fmt.Sprintf(`%s-%d`, record.Topic(), record.Partition())] = kafka.ConsumerOffset{
+		Topic:     record.Topic(),
+		Partition: record.Partition(),
+		Offset:    record.Offset() + 1,
+	}
+
+	return nil
+}
+
+func (b *commitBuffer) Records() []*Record {
+	return b.records
+}
+
+func (b *commitBuffer) Flush() error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
 	return b.flush()
 }
 
-func (b *buffer) flush() error {
+func (b *commitBuffer) flush() error {
 	count := len(b.records)
-	if count < 1 { // Nothing to flush
+
+	if count < 1 {
 		return nil
 	}
 
 	defer func() {
-		b.logger.Info(fmt.Sprintf(`Buffer flushed with %d records`, count))
-		b.records = nil
-
 		b.metrics.batchSize.Count(float64(count), nil)
 	}()
 
-	return b.onFlush(b.records)
+	return b.commit(nil, 0)
 }
 
-func (b *buffer) Close() error {
-	b.logger.Info(`Buffer closing...`)
-	defer b.logger.Info(`Buffer closed`)
-	b.stopping <- struct{}{}
-	<-b.stopped
+func (b *commitBuffer) commit(previousErr error, itr int) error {
+	itr++
 
-	b.tick.Stop()
+	offsets := make([]kafka.ConsumerOffset, 0)
+	if len(b.offsetMap) > 0 {
+		for i := range b.offsetMap {
+			offsets = append(offsets, b.offsetMap[i])
+		}
 
-	// Do a one last flush before closing
-	return b.Flush()
-}
-
-func (b *buffer) run() {
-	defer async.LogPanicTrace(b.logger)
-	defer b.logger.Info(`Buffer stopped`)
-
-LP:
-	for {
-		select {
-		case <-b.tick.C:
-			if err := b.Flush(); err != nil {
-				b.logger.Error(err)
+		meta, err := b.session.GroupMeta()
+		if err != nil {
+			b.logger.Error(fmt.Sprintf(`transaction Consumer GroupMeta fetch failed due to %s, abotring transactions`, err))
+			if txAbErr := b.producer.AbortTransaction(context.Background()); txAbErr != nil {
+				b.logger.Warn(fmt.Sprintf(`transaction abort failed due to %s`, txAbErr))
+				return txAbErr
 			}
-		case <-b.stopping:
-			break LP
+
+			return err
+		}
+
+		if err := b.producer.SendOffsetsToTransaction(context.Background(), offsets, meta); err != nil {
+			return errors.Wrap(err, `commit(SendOffsetsToTransaction) failed`)
 		}
 	}
 
-	b.stopped <- struct{}{}
+	if err := b.producer.CommitTransaction(context.Background()); err != nil {
+		return errors.Wrap(err, `commit(CommitTransaction) failed`)
+	}
+
+	for name := range b.subTopology.StateStores() {
+		store := b.subTopology.StateStores()[name]
+		if err := store.Flush(); err != nil {
+			return errors.Wrap(err, `state stores flush failed`)
+		}
+		store.ResetCache()
+	}
+
+	// Begin a new transaction
+	if err := b.producer.BeginTransaction(); err != nil {
+		panic(err)
+	}
+
+	// Reset offsets map and records maps
+	b.offsetMap = map[string]kafka.ConsumerOffset{}
+	b.records = nil
+
+	if len(offsets) > 0 {
+		b.logger.Info(fmt.Sprintf(`Transaction committed(offsets %+v)`, offsets))
+	}
+
+	return nil
+}
+
+func (b *commitBuffer) Reset(dueTo error) error {
+	b.logger.Warn(fmt.Sprintf(`Buffer resetting due to %s...`, dueTo))
+	defer b.logger.Info(`Commit Buffer resetted`)
+
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	// Purge the store cache before the processing starts.
+	// This will clear out any half processed states from state store caches.
+	for name := range b.subTopology.StateStores() {
+		b.subTopology.StateStores()[name].ResetCache()
+	}
+
+	if err := b.producer.AbortTransaction(context.Background()); err != nil {
+		return errors.Wrap(err, `transaction abort failed`)
+	}
+
+	if err := b.producer.BeginTransaction(); err != nil {
+		return errors.Wrap(err, `transaction begin failed`)
+	}
+
+	b.offsetMap = map[string]kafka.ConsumerOffset{}
+	b.records = nil
+
+	return nil
+}
+
+func (b *commitBuffer) Close() error {
+	b.logger.Info(`Commit Buffer closing...`)
+	defer b.logger.Info(`Commit Buffer closed`)
+
+	return b.Flush()
 }

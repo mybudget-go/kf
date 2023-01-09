@@ -12,14 +12,16 @@ import (
 )
 
 type Index interface {
+	sync.Locker
 	String() string
-	Write(key string, value interface{}) error
-	Hash(key string, val interface{}) (hash string)
-	Delete(key string, value interface{}) error
+	Write(key, value interface{}) error
+	KeyPrefixer(key, value interface{}) (hash string)
+	Delete(key, value interface{}) error
 	Read(index string) (backend.Iterator, error)
 	Values(key string) ([]string, error)
 	Keys() ([]string, error)
-	KeyIndexed(index string, key string) (bool, error)
+	Compare(key interface{}, valBefore, valAfter interface{}) (bool, error)
+	KeyIndexed(index string, key interface{}) (bool, error)
 	Close() error
 }
 
@@ -27,7 +29,7 @@ type IndexedStore interface {
 	Store
 	GetIndex(ctx context.Context, name string) (Index, error)
 	Indexes() []Index
-	GetIndexedRecords(ctx context.Context, indexName string, key interface{}) (Iterator, error)
+	GetIndexedRecords(ctx context.Context, indexName, key string) (Iterator, error)
 }
 
 type indexedStore struct {
@@ -37,19 +39,31 @@ type indexedStore struct {
 	mu *sync.Mutex
 }
 
-func NewIndexedStore(name string, keyEncoder, valEncoder encoding.Encoder, indexes []Index, options ...Option) (IndexedStore, error) {
-	store, err := NewStore(name, keyEncoder, valEncoder, options...)
+func NewIndexedStore(name string, keyEncoder, valEncoder encoding.Encoder, indexes []IndexBuilder, options ...Option) (IndexedStore, error) {
+	str, err := NewStore(name, keyEncoder, valEncoder, options...)
 	if err != nil {
 		return nil, err
 	}
 
+	// Build indexes
 	idxs := make(map[string]Index)
-	for _, idx := range indexes {
+	for _, builder := range indexes {
+		var bkBuilder backend.Builder
+		switch v := str.(type) {
+		case *store:
+			bkBuilder = v.opts.backendBuilder
+		}
+
+		idx, err := builder.Build(str, bkBuilder, str.KeyEncoder())
+		if err != nil {
+			return nil, err
+		}
+
 		idxs[idx.String()] = idx
 	}
 
 	return &indexedStore{
-		Store:   store,
+		Store:   str,
 		indexes: idxs,
 		mu:      new(sync.Mutex),
 	}, nil
@@ -98,7 +112,7 @@ func (i *indexedStore) Indexes() []Index {
 	return idxs
 }
 
-func (i *indexedStore) GetIndexedRecords(ctx context.Context, indexName string, key interface{}) (Iterator, error) {
+func (i *indexedStore) GetIndexedRecords(ctx context.Context, indexName, key string) (Iterator, error) {
 	i.mu.Lock()
 	idx, ok := i.indexes[indexName]
 	i.mu.Unlock()
@@ -107,18 +121,14 @@ func (i *indexedStore) GetIndexedRecords(ctx context.Context, indexName string, 
 		return nil, fmt.Errorf(`index [%s] does not exist`, indexName)
 	}
 
-	kByt, err := i.KeyEncoder().Encode(key)
-	if err != nil {
-		return nil, err
-	}
-
-	idxBkItr, err := idx.Read(string(kByt))
+	idxBkItr, err := idx.Read(key)
 	if err != nil {
 		return nil, err
 	}
 
 	itr := &indexIterator{
 		store:         i,
+		idx:           idx,
 		indexIterator: idxBkItr,
 	}
 

@@ -79,6 +79,8 @@ func (lg *changelogSyncer) startSync(ctx context.Context, partition kafka.Partit
 	}(ticker)
 	syncStarted := time.Now()
 
+	var syncing = true
+
 MAIN:
 	for {
 		select {
@@ -92,15 +94,23 @@ MAIN:
 			switch e := event.(type) {
 			case kafka.Record:
 				atomic.AddInt64(&syncedCount, 1)
-
 				// Handle tombstones
 				if idxStor, ok := lg.store.(stores.IndexedStore); ok && len(idxStor.Indexes()) > 0 {
-					if err := lg.updateIndexStore(idxStor, e); err != nil {
-						lg.logger.Warn(fmt.Sprintf(`Cannot update indexed store due to %s`, err))
+					// If recovery is in progress
+					if syncing {
+						if err := lg.updateStore(e); err != nil {
+							lg.logger.Error(fmt.Sprintf(`Cannot update store due to %s`, err))
+						}
+						continue
 					}
+
+					if err := lg.updateStoreWithIndex(idxStor, e); err != nil {
+						lg.logger.Error(fmt.Sprintf(`Cannot update indexed store due to %s`, err))
+					}
+
 				} else {
 					if err := lg.updateStore(e); err != nil {
-						lg.logger.Warn(fmt.Sprintf(`Cannot update store due to %s`, err))
+						lg.logger.Error(fmt.Sprintf(`Cannot update store due to %s`, err))
 					}
 				}
 
@@ -111,7 +121,7 @@ MAIN:
 
 				// TODO offset has to be offset+1
 				if err := lg.offsetStore.Commit(ctx, lg.tp, kafka.Offset(e.Offset())); err != nil {
-					lg.logger.Warn(fmt.Sprintf(`Cannot commit offset due to %s`, err))
+					lg.logger.Error(fmt.Sprintf(`Cannot commit offset due to %s`, err))
 					continue
 				}
 
@@ -122,7 +132,18 @@ MAIN:
 						syncedCount,
 						time.Since(syncStarted).String()))
 					ticker.Stop()
+
+					// Rebuild indexes
+					if idxStr, ok := lg.store.(stores.IndexedStore); ok {
+						if err := lg.rebuildStoreIndexes(idxStr); err != nil {
+							panic(errors.Wrapf(err, `changelog recovery failed. `).Error())
+						}
+					}
+
+					// Send partition sync completed signal
 					synced <- struct{}{}
+					syncing = false
+
 				})
 
 			case *kafka.Error:
@@ -144,7 +165,7 @@ func (lg *changelogSyncer) Stop() error {
 	return nil
 }
 
-func (lg *changelogSyncer) updateIndexStore(store stores.IndexedStore, record kafka.Record) error {
+func (lg *changelogSyncer) updateStoreWithIndex(store stores.IndexedStore, record kafka.Record) error {
 	if len(record.Value()) < 1 {
 		key, err := lg.store.KeyEncoder().Decode(record.Key())
 		if err != nil {
@@ -189,6 +210,41 @@ func (lg *changelogSyncer) updateStore(record kafka.Record) error {
 
 	if err := lg.store.Backend().Set(record.Key(), record.Value(), 0); err != nil {
 		return errors.Wrapf(err, `Cannot write message(%s)`, record)
+	}
+
+	return nil
+}
+
+func (lg *changelogSyncer) rebuildStoreIndexes(stor stores.IndexedStore) error {
+	lg.logger.Info(`Rebuilding indexes...`)
+
+	var idxCount int
+	defer func(t time.Time) {
+		lg.logger.Info(fmt.Sprintf(`Rebuilding indexes completed(%d records) in %s`, idxCount, time.Since(t).String()))
+	}(time.Now())
+
+	itr, err := stor.Iterator(nil)
+	if err != nil {
+		return errors.Wrapf(err, `rebuild indexes failed. store iterator failed`)
+	}
+
+	defer itr.Close()
+
+	for itr.SeekToFirst(); itr.Valid(); itr.Next() {
+		key, err := itr.Key()
+		if err != nil {
+			return errors.Wrapf(err, `rebuild indexes failed. itr key failed`)
+		}
+
+		val, err := itr.Value()
+		if err != nil {
+			return errors.Wrapf(err, `rebuild indexes failed. itr value failed`)
+		}
+
+		if err := stores.UpdateIndexes(nil, stor, key, val); err != nil {
+			return errors.Wrapf(err, `rebuild indexes failed. cannot update indexes`)
+		}
+		idxCount++
 	}
 
 	return nil

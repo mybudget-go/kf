@@ -16,6 +16,7 @@ type Source interface {
 	Topic() string
 	ShouldCoPartitionedWith(source Source)
 	CoPartitionedWith() Source
+	GetExistingParent(src Source) Source
 	RePartitionedAs() Source
 	AutoCreate() bool
 	Internal() bool

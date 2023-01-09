@@ -25,7 +25,7 @@ func newMockStore() *StateStore {
 	}
 	return &StateStore{
 		Store: str,
-		cache: newCache(),
+		cache: str.Cache(),
 	}
 }
 
@@ -66,9 +66,9 @@ func newScenario(t *testing.T, store, cache, final []testRec, searchPrefix strin
 		switch rec.value {
 		case cacheDoesNotExist:
 		case cacheDeleted:
-			stateStr.cache.Delete([]byte(rec.key.(string)))
+			stateStr.cache.Backend().Delete([]byte(rec.key.(string)))
 		default:
-			stateStr.cache.Write([]byte(rec.key.(string)), []byte(rec.value.(string)))
+			stateStr.cache.Backend().Set([]byte(rec.key.(string)), []byte(rec.value.(string)), 0)
 		}
 	}
 	var i stores.Iterator

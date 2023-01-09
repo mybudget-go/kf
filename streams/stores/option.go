@@ -6,15 +6,15 @@ import (
 )
 
 type StoreOptions struct {
-	//changelog        state_stores.ChangeLogger
-	backend          backend.Backend
-	backendBuilder   backend.Builder
-	versionExtractor RecordVersionExtractor
-	versionWriter    RecordVersionWriter
-	//expiry            time.Duration
+	storageDir        string
+	backend           backend.Backend
+	backendBuilder    backend.Builder
+	versionExtractor  RecordVersionExtractor
+	versionWriter     RecordVersionWriter
 	buffered          bool
 	bufferSize        int
 	compactionEnabled bool
+	cachingEnabled    bool
 }
 
 type Option func(config *StoreOptions)
@@ -35,29 +35,23 @@ func WithVersionExtractor(etc RecordVersionExtractor) Option {
 	}
 }
 
+func WithCachingEnabled() Option {
+	return func(config *StoreOptions) {
+		config.cachingEnabled = true
+	}
+}
+
 func WithVersionWriter(wr RecordVersionWriter) Option {
 	return func(config *StoreOptions) {
 		config.versionWriter = wr
 	}
 }
 
-//func WithChangeLogger(changelog state_stores.ChangeLogger) Option {
-//	return func(config *StoreOptions) {
-//		config.changelog = changelog
-//	}
-//}
-
 func Compacated() Option {
 	return func(options *StoreOptions) {
 		options.compactionEnabled = true
 	}
 }
-
-//func WithExpiry(d time.Duration) Option {
-//	return func(options *StoreOptions) {
-//		options.expiry = d
-//	}
-//}
 
 func Buffered(size int) Option {
 	return func(options *StoreOptions) {

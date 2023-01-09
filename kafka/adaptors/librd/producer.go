@@ -31,8 +31,8 @@ const (
 )
 
 type librdProducer struct {
-	config        *ProducerConfig
-	librdProducer *librdKafka.Producer
+	config       *ProducerConfig
+	baseProducer *librdKafka.Producer
 
 	metrics struct {
 		produceLatency metrics.Observer
@@ -44,6 +44,8 @@ type librdProducer struct {
 		}
 		produceErrors metrics.Counter
 	}
+
+	mu *sync.RWMutex
 
 	partitionCounts *sync.Map
 	adminClient     kafka.Admin
@@ -108,9 +110,10 @@ func NewProducer(configs *ProducerConfig) (kafka.Producer, error) {
 
 	p := &librdProducer{
 		config:          configs,
-		librdProducer:   producer,
+		baseProducer:    producer,
 		adminClient:     admin,
 		partitionCounts: new(sync.Map),
+		mu:              &sync.RWMutex{},
 	}
 
 	// Drain all the delivery messages (we don't need them here. since we are relying on transaction commit).
@@ -207,7 +210,7 @@ func (p *librdProducer) ProduceSync(ctx context.Context, message kafka.Record) (
 		return 0, 0, errors.Wrapf(err, `message[%s] prepare error`, message)
 	}
 
-	err = p.librdProducer.Produce(kMessage, dChan)
+	err = p.librdProducer().Produce(kMessage, dChan)
 	if err != nil {
 		return 0, 0, errors.Wrap(err, `cannot send message`)
 	}
@@ -234,13 +237,13 @@ func (p *librdProducer) Close() error {
 	defer p.config.Logger.Info(`Producer closed`)
 
 	// Lets remove all the messages in librdkafka queues
-	if err := p.librdProducer.Purge(
+	if err := p.librdProducer().Purge(
 		librdKafka.PurgeInFlight |
 			librdKafka.PurgeNonBlocking | librdKafka.PurgeQueue); err != nil {
 		p.config.Logger.Error(err)
 	}
 
-	err := p.librdProducer.AbortTransaction(nil)
+	err := p.librdProducer().AbortTransaction(nil)
 	if err != nil {
 		if err.(librdKafka.Error).Code() == librdKafka.ErrState {
 			// No transaction in progress, ignore the error.
@@ -250,7 +253,7 @@ func (p *librdProducer) Close() error {
 		}
 	}
 
-	p.librdProducer.Close()
+	p.librdProducer().Close()
 
 	return nil
 }
@@ -268,14 +271,16 @@ func (p *librdProducer) Restart() error {
 		p.config.Logger.Fatal(err)
 	}
 
-	p.librdProducer = prd
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.baseProducer = prd
 
 	return nil
 }
 
 func (p *librdProducer) printLogs() {
 	logger := p.config.Logger.NewLog(log.Prefixed(`LibrdLogs`))
-	for lg := range p.librdProducer.Logs() {
+	for lg := range p.librdProducer().Logs() {
 		switch lg.Level {
 		case 0, 1, 2:
 			logger.Error(lg.String(), `level`, lg.Level)
@@ -294,13 +299,13 @@ func (p *librdProducer) forceClose() error {
 	defer p.config.Logger.Warn(`Producer closed`)
 
 	p.config.Logger.Info(`Purging producer queues kafka.PurgeInFlight|kafka.PurgeNonBlocking|kafka.PurgeQueue`)
-	if err := p.librdProducer.Purge(
+	if err := p.librdProducer().Purge(
 		librdKafka.PurgeInFlight |
 			librdKafka.PurgeNonBlocking | librdKafka.PurgeQueue); err != nil {
 		p.config.Logger.Error(err)
 	}
 
-	p.librdProducer.Close()
+	p.librdProducer().Close()
 
 	return nil
 }
@@ -362,7 +367,7 @@ func (p *librdProducer) getPartitionCount(topic string) (int32, error) {
 		return v.(int32), nil
 	}
 
-	meta, err := p.librdProducer.GetMetadata(&topic, false, 10000) //TODO make this configurable
+	meta, err := p.librdProducer().GetMetadata(&topic, false, 10000) //TODO make this configurable
 	if err != nil {
 		return 0, errors.Wrapf(err, `metadata fetch failed for %s`, topic)
 	}
@@ -371,4 +376,11 @@ func (p *librdProducer) getPartitionCount(topic string) (int32, error) {
 	p.partitionCounts.Store(topic, count)
 
 	return count, nil
+}
+
+func (p *librdProducer) librdProducer() *librdKafka.Producer {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	return p.baseProducer
 }

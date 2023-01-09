@@ -14,7 +14,7 @@ import (
 	"github.com/gmbyapa/kstream/pkg/errors"
 	"github.com/tryfix/log"
 	"github.com/tryfix/metrics"
-	"time"
+	//"sync"
 )
 
 type Config struct {
@@ -39,15 +39,12 @@ func (c *Config) parse() {
 }
 
 type Pebble struct {
-	logger  log.Logger
-	pebble  *pebbleDB.DB
+	logger log.Logger
+	pebble *pebbleDB.DB
+	*Reader
+	*Writer
 	metrics struct {
-		readLatency             metrics.Observer
-		updateLatency           metrics.Observer
-		iteratorLatency         metrics.Observer
-		prefixedIteratorLatency metrics.Observer
-		deleteLatency           metrics.Observer
-		storageSize             metrics.Gauge
+		storageSize metrics.Gauge
 	}
 }
 
@@ -57,22 +54,32 @@ func Builder(config *Config) backend.Builder {
 	}
 }
 
-func NewPebbleBackend(name string, config *Config) (backend.Backend, error) {
-	pb, err := pebbleDB.Open(fmt.Sprintf(`%s/%s`, config.Dir, name), config.Options)
+func NewPebbleBackend(name string, config *Config) (*Pebble, error) {
+	dbName := fmt.Sprintf(`%s/pebble/%s`, config.Dir, name)
+
+	pb, err := pebbleDB.Open(dbName, config.Options)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, `db open error, backend:%s`, dbName)
 	}
 
 	m := &Pebble{}
 	m.pebble = pb
+	m.Reader = &Reader{pebble: pb, name: dbName}
+	m.Writer = &Writer{pebble: pb}
 
-	labels := []string{`name`, `type`}
-	m.metrics.readLatency = config.MetricsReporter.Observer(metrics.MetricConf{Path: `backend_read_latency_microseconds`, Labels: labels})
-	m.metrics.iteratorLatency = config.MetricsReporter.Observer(metrics.MetricConf{Path: `backend_read_iterator_latency_microseconds`, Labels: labels})
-	m.metrics.prefixedIteratorLatency = config.MetricsReporter.Observer(metrics.MetricConf{Path: `backend_read_prefix_iterator_latency_microseconds`, Labels: labels})
-	m.metrics.updateLatency = config.MetricsReporter.Observer(metrics.MetricConf{Path: `backend_update_latency_microseconds`, Labels: labels})
-	m.metrics.storageSize = config.MetricsReporter.Gauge(metrics.MetricConf{Path: `backend_storage_size`, Labels: labels})
-	m.metrics.deleteLatency = config.MetricsReporter.Observer(metrics.MetricConf{Path: `backend_delete_latency_microseconds`, Labels: labels})
+	constLabels := map[string]string{`name`: name, `type`: `memory`}
+	m.Reader.metrics.readLatency = config.MetricsReporter.Observer(
+		metrics.MetricConf{Path: `backend_read_latency_microseconds`, ConstLabels: constLabels})
+	m.Reader.metrics.iteratorLatency = config.MetricsReporter.Observer(
+		metrics.MetricConf{Path: `backend_read_iterator_latency_microseconds`, ConstLabels: constLabels})
+	m.Reader.metrics.prefixedIteratorLatency = config.MetricsReporter.Observer(
+		metrics.MetricConf{Path: `backend_read_prefix_iterator_latency_microseconds`, ConstLabels: constLabels})
+	m.Writer.metrics.updateLatency = config.MetricsReporter.Observer(
+		metrics.MetricConf{Path: `backend_update_latency_microseconds`, ConstLabels: constLabels})
+	m.metrics.storageSize = config.MetricsReporter.Gauge(
+		metrics.MetricConf{Path: `backend_storage_size`, ConstLabels: constLabels})
+	m.Writer.metrics.deleteLatency = config.MetricsReporter.Observer(
+		metrics.MetricConf{Path: `backend_delete_latency_microseconds`, ConstLabels: constLabels})
 
 	return m, nil
 }
@@ -89,75 +96,11 @@ func (p *Pebble) Persistent() bool {
 	return false
 }
 
-func (p *Pebble) Set(key []byte, value []byte, expiry time.Duration) error {
-	defer func(begin time.Time) {
-		p.metrics.updateLatency.Observe(
-			float64(time.Since(begin).Nanoseconds()/1e3), map[string]string{`name`: p.Name(), `type`: `memory`})
-	}(time.Now())
-
-	return p.pebble.Set(key, value, pebbleDB.NoSync)
-}
-
-func (p *Pebble) Get(key []byte) ([]byte, error) {
-	defer func(begin time.Time) {
-		p.metrics.readLatency.Observe(
-			float64(time.Since(begin).Nanoseconds()/1e3), map[string]string{`name`: p.Name(), `type`: `memory`})
-	}(time.Now())
-
-	valP, buf, err := p.pebble.Get(key)
-	if err != nil {
-		if errors.Is(err, pebbleDB.ErrNotFound) {
-			return nil, nil
-		}
-		return nil, err
+func (p *Pebble) Cache() backend.Cache {
+	return &Cache{
+		batch: p.pebble.NewIndexedBatch(),
+		//mu:    &sync.Mutex{},
 	}
-
-	val := make([]byte, len(valP))
-
-	copy(val, valP)
-
-	if err := buf.Close(); err != nil {
-		return nil, err
-	}
-
-	return val, nil
-}
-
-func (p *Pebble) PrefixedIterator(keyPrefix []byte) backend.Iterator {
-	defer func(begin time.Time) {
-		p.metrics.prefixedIteratorLatency.Observe(float64(time.Since(begin).Nanoseconds()/1e3), map[string]string{`name`: p.Name(), `type`: `memory`})
-	}(time.Now())
-
-	opts := new(pebbleDB.IterOptions)
-	opts.LowerBound = keyPrefix
-	opts.UpperBound = keyUpperBound(keyPrefix)
-	return &Iterator{itr: p.pebble.NewIter(opts)}
-}
-
-func (p *Pebble) Iterator() backend.Iterator {
-	defer func(begin time.Time) {
-		p.metrics.prefixedIteratorLatency.Observe(float64(time.Since(begin).Nanoseconds()/1e3), map[string]string{`name`: p.Name(), `type`: `memory`})
-	}(time.Now())
-
-	return &Iterator{itr: p.pebble.NewIter(new(pebbleDB.IterOptions))}
-}
-
-func (p *Pebble) Delete(key []byte) error {
-	defer func(begin time.Time) {
-		p.metrics.deleteLatency.Observe(float64(time.Since(begin).Nanoseconds()/1e3), map[string]string{`name`: p.Name(), `type`: `memory`})
-	}(time.Now())
-
-	return p.pebble.Delete(key, pebbleDB.NoSync)
-}
-
-func (p *Pebble) Destroy() error { return nil }
-
-func (p *Pebble) SetExpiry(_ time.Duration) {}
-
-func (p *Pebble) reportMetricsSize() {}
-
-func (p *Pebble) Close() error {
-	return p.pebble.Close()
 }
 
 func keyUpperBound(b []byte) []byte {
