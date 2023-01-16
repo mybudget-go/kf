@@ -191,7 +191,7 @@ MAIN:
 	defer g.config.Logger.Info(`Consumer closed`)
 
 	if err := g.consumer.Close(); err != nil {
-		return err
+		return errors.Wrapf(err, `consumer closer error. ConsumerID: %s`, g.config.Id)
 	}
 
 	return err

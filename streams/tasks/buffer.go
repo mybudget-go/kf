@@ -29,6 +29,7 @@ type BufferConfig struct {
 	// starts(This includes messages in the state store changelogs).
 	// Please note that this value has to be lesser than the
 	// producer queue.buffering.max.messages
+	// Deprecated no longer applicable
 	Size int
 	// FlushInterval defines minimum wait time before the flush starts
 	FlushInterval time.Duration

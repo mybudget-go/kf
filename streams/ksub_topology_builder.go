@@ -157,19 +157,12 @@ func (b *kSubTopologyBuilder) Setup(ctx topology.SubTopologySetupContext) error 
 	}
 
 	for _, src := range sources {
-		if src.CoPartitionedWith() != nil && !src.AutoCreate() {
-			tp1 := ctx.TopicMeta()[src.Topic()]
-			tp2 := ctx.TopicMeta()[src.CoPartitionedWith().Topic()]
-
-			if src.CoPartitionedWith().AutoCreate() {
-				parent := src.GetExistingParent(src.CoPartitionedWith())
-				tp2 = ctx.TopicMeta()[parent.Topic()]
-			}
-
-			if tp1.NumPartitions != tp2.NumPartitions {
+		if src.CoPartitionedWith() != nil {
+			if src.TopicConfigs().NumPartitions != src.CoPartitionedWith().TopicConfigs().NumPartitions {
 				return errors.New(fmt.Sprintf(
-					`Topology %s, topics must be co-partitioned (%s-%d != %s-%d) `,
-					b.id, src.Topic(), tp1.NumPartitions, src.CoPartitionedWith().Topic(), tp2.NumPartitions))
+					`Topology %s, topics must be co-partitioned. Topic %s(%d-Partitions) does not 
+							co-partitioned with Topic %s(%d-Partitions)) `,
+					b.id, src.Topic(), src.TopicConfigs().NumPartitions, src.CoPartitionedWith().Topic(), src.CoPartitionedWith().TopicConfigs().NumPartitions))
 			}
 		}
 	}

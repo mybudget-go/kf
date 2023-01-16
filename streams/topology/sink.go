@@ -20,6 +20,5 @@ type Sink interface {
 type SinkBuilder interface {
 	NodeBuilder
 	Topic() string
-	RePartitionedAs() Source
 	AutoCreate() bool
 }

@@ -73,17 +73,12 @@ func NewStore(name string, keyEncoder encoding.Encoder, valEncoder encoding.Enco
 		opts.backend = bk
 	}
 
-	var stor Store
-
-	rwStore := &store{
+	return &store{
 		name:       name,
 		keyEncoder: keyEncoder,
 		valEncoder: valEncoder,
 		opts:       opts,
-	}
-	stor = rwStore
-
-	return stor, nil
+	}, nil
 }
 
 func (s *store) Name() string {

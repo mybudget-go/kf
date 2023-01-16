@@ -2,7 +2,9 @@ package streams
 
 import (
 	"context"
+	"fmt"
 	"github.com/gmbyapa/kstream/kafka"
+	"github.com/gmbyapa/kstream/pkg/errors"
 	"github.com/gmbyapa/kstream/streams/encoding"
 	"github.com/gmbyapa/kstream/streams/topology"
 )
@@ -60,17 +62,28 @@ func markAsInternal() KSourceOption {
 	}
 }
 
+func markAsGlobal() KSourceOption {
+	return func(source *KSource) {
+		source.global = true
+	}
+}
+
 type KSource struct {
 	encoder               topology.SourceEncoder
 	topic                 string
 	offsetReset           kafka.Offset
 	coPartitionedWith     topology.Source
 	sourceCtxParamBinders []SourceCtxParamExtractor
-	autoCreate            struct {
+	topicConfigs          struct {
+		name    string
+		configs kafka.TopicConfig
+	}
+	autoCreate struct {
 		enabled bool
 		*AutoTopicOpts
 	}
 	internal           bool
+	global             bool
 	topicNameFormatter TopicNameFormatter
 	topology.DefaultNode
 }
@@ -124,6 +137,10 @@ func (s *KSource) Build(_ topology.SubTopologyContext) (topology.Node, error) {
 }
 
 func (s *KSource) Setup(ctx topology.SubTopologySetupContext) error {
+	if s.global {
+		return nil
+	}
+
 	if s.autoCreate.enabled {
 		if s.topicNameFormatter != nil {
 			s.topic = s.topicNameFormatter(s.topic)(ctx, s.Id())
@@ -131,29 +148,40 @@ func (s *KSource) Setup(ctx topology.SubTopologySetupContext) error {
 
 		numOfPartitions := ctx.MaxPartitionCount()
 
-		if !s.Internal() && s.RePartitionedAs() != nil {
-			numOfPartitions = ctx.TopicMeta()[s.RePartitionedAs().Topic()].NumPartitions
-		}
+		s.topicConfigs.name = s.topic
+		s.topicConfigs.configs.NumPartitions = numOfPartitions
+		s.topicConfigs.configs.ReplicationFactor = s.autoCreate.AutoTopicOpts.replicaCount
+		s.topicConfigs.configs.ConfigEntries = s.autoCreate.AutoTopicOpts.configEntries
 
 		topic := &kafka.Topic{
-			Name:              s.topic,
-			NumPartitions:     numOfPartitions,
-			ReplicationFactor: s.autoCreate.AutoTopicOpts.replicaCount,
-			ConfigEntries:     s.autoCreate.AutoTopicOpts.configEntries,
+			Name:              s.topicConfigs.name,
+			NumPartitions:     s.topicConfigs.configs.NumPartitions,
+			ReplicationFactor: s.topicConfigs.configs.ReplicationFactor,
+			ConfigEntries:     s.topicConfigs.configs.ConfigEntries,
 		}
 
 		// The topology only have auto create topics. looking for
 		// autoCreateOptions.partitionedAs to get the number of
 		// partitions form the parent
-		// TODO what if topology has more than one auto create topics
 		if ctx.MaxPartitionCount() < 1 && s.autoCreate.AutoTopicOpts.partitionAs != nil {
-			topic.NumPartitions = ctx.TopicMeta()[s.autoCreate.partitionAs.Topic()].NumPartitions
+			topic.NumPartitions = s.autoCreate.AutoTopicOpts.partitionAs.TopicConfigs().NumPartitions
 		}
 
 		if err := ctx.Admin().StoreConfigs([]*kafka.Topic{topic}); err != nil {
 			return s.WrapErr(err)
 		}
+
+		return nil
 	}
+
+	s.topicConfigs.name = s.topic
+
+	meta, ok := ctx.TopicMeta()[s.topic]
+	if !ok {
+		return errors.New(fmt.Sprintf(`metadata unavailable for topic %s`, s.topic))
+	}
+
+	s.topicConfigs.configs.NumPartitions = meta.NumPartitions
 
 	return nil
 }
@@ -192,7 +220,6 @@ func (s *KSource) Topic() string {
 }
 
 func (s *KSource) ShouldCoPartitionedWith(source topology.Source) {
-	source.(*KSource).coPartitionedWith = s
 	s.coPartitionedWith = source
 }
 
@@ -205,21 +232,7 @@ func (s *KSource) RePartitionedAs() topology.Source {
 		return nil
 	}
 
-	if s.autoCreate.partitionAs.AutoCreate() {
-		return s.GetExistingParent(s.autoCreate.partitionAs)
-	}
-
 	return s.autoCreate.partitionAs
-}
-
-// getExistingParent return a parent topic which already exists in kafka
-// This is possible because each auto created sub topology must have a origin topic
-func (s *KSource) GetExistingParent(src topology.Source) topology.Source {
-	if src.AutoCreate() {
-		return s.GetExistingParent(src.RePartitionedAs())
-	}
-
-	return src
 }
 
 func (s *KSource) AutoCreate() bool {
@@ -228,6 +241,10 @@ func (s *KSource) AutoCreate() bool {
 
 func (s *KSource) Internal() bool {
 	return s.autoCreate.enabled
+}
+
+func (s *KSource) TopicConfigs() kafka.TopicConfig {
+	return s.topicConfigs.configs
 }
 
 func (s *KSource) InitialOffset() kafka.Offset {

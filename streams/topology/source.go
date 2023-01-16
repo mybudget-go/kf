@@ -15,8 +15,8 @@ type Source interface {
 	Encoder() SourceEncoder
 	Topic() string
 	ShouldCoPartitionedWith(source Source)
+	TopicConfigs() kafka.TopicConfig
 	CoPartitionedWith() Source
-	GetExistingParent(src Source) Source
 	RePartitionedAs() Source
 	AutoCreate() bool
 	Internal() bool

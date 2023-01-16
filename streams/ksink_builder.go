@@ -30,22 +30,6 @@ func ProduceWithHeadersExtractor(h HeaderExtractor) KSinkOption {
 	}
 }
 
-func ProduceWithAutoTopicCreateOptions(options ...TopicOpt) KSinkOption {
-	return func(sink *kSinkBuilder) {
-		sink.autoCreate.partitionCount = 1
-		sink.autoCreate.replicaCount = 1
-		for _, opt := range options {
-			opt(sink.autoCreate.AutoTopicOpts)
-		}
-	}
-}
-
-func ProduceWithAutoTopicCreateEnabled() KSinkOption {
-	return func(sink *kSinkBuilder) {
-		sink.autoCreate.enabled = true
-	}
-}
-
 func ProduceWithTombstoneFilter(f Tombstoner) KSinkOption {
 	return func(sink *kSinkBuilder) {
 		sink.tombstoneFiler = f
@@ -185,26 +169,6 @@ func (s *kSinkBuilder) Build(ctx topology.SubTopologyContext) (topology.Node, er
 	sink.topic.numOfPartitions = ctx.TopicMeta()[s.topic.name].NumPartitions
 
 	return sink, nil
-}
-
-func (s *kSinkBuilder) RePartitionedAs() topology.Source {
-	if s.autoCreate.partitionAs == nil {
-		return nil
-	}
-
-	if s.autoCreate.partitionAs.AutoCreate() {
-		return s.getExistingParent(s.autoCreate.partitionAs)
-	}
-
-	return s.autoCreate.partitionAs
-}
-
-func (s *kSinkBuilder) getExistingParent(src topology.Source) topology.Source {
-	if src != nil && src.AutoCreate() {
-		return s.getExistingParent(src.RePartitionedAs())
-	}
-
-	return src
 }
 
 func (s *kSinkBuilder) AutoCreate() bool {

@@ -30,15 +30,6 @@ func RePartitionAs(topic string) RepartitionOpt {
 	}
 }
 
-// CoPartitionAs co-partitions the topic with a given StreamTopology Source
-func CoPartitionAs(stream StreamTopology) RepartitionOpt {
-	return func(rpOpts *RepartitionOpts) {
-		rpOpts.sourceOpts = append(rpOpts.sourceOpts, ConsumeWithAutoTopicCreateEnabled(
-			PartitionAs(stream.source()),
-		))
-	}
-}
-
 func RePartitionWithKeyEncoder(enc encoding.Encoder) RepartitionOpt {
 	return func(rpOpts *RepartitionOpts) {
 		rpOpts.sinkOpts = append(rpOpts.sinkOpts, ProduceWithKeyEncoder(enc))

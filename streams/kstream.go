@@ -180,10 +180,9 @@ func (k *kStream) Map(transformer processors.MapperFunc, opts ...StreamOption) S
 	}
 
 	return k.newChildStream(node).maybeRepartitioned(
-		//RePartitionAs(fmt.Sprintf(`%s-%s`, k.kSource.Topic(), node.NodeName())),
 		rePartitionedWithSourceOpts(
 			ConsumeWithAutoTopicCreateEnabled(
-				PartitionAs(k.kSource))))
+				PartitionAs(k.source()))))
 }
 
 func (k *kStream) Filter(filter processors.FilterFunc, opts ...StreamOption) Stream {
@@ -399,7 +398,7 @@ func (k *kStream) LeftJoinTable(table Table, valMapper processors.JoinValueMappe
 
 func (k *kStream) joinTable(table Table, valMapper processors.JoinValueMapper, typ processors.JoinerType, opts ...JoinOption) Stream {
 	// Mark source for co partitioning
-	k.source().ShouldCoPartitionedWith(table.source())
+	table.source().ShouldCoPartitionedWith(k.source())
 
 	joinOpts := new(JoinOptions)
 	joinOpts.apply(opts...)
@@ -497,7 +496,8 @@ func (k *kStream) Through(topic string, options ...DslOption) Stream {
 }
 
 func (k *kStream) Merge(stream Stream) Stream {
-	k.source().ShouldCoPartitionedWith(stream.source())
+	stream.source().ShouldCoPartitionedWith(k.source())
+
 	// if merging streams topology is different to current one extract and import that first
 	if k.stpBuilder.Id() != stream.topology().Id() {
 		k.stpBuilder.MergeSubTopology(stream.topology())
@@ -516,7 +516,6 @@ func (k *kStream) Merge(stream Stream) Stream {
 func (k *kStream) To(topic string, options ...KSinkOption) {
 	opts := []KSinkOption{
 		ProduceWithLogger(k.builder.config.Logger),
-		ProduceWithAutoTopicCreateOptions(WithReplicaCount(k.builder.config.InternalTopicsDefaultReplicaCount)),
 		ProduceWithKeyEncoder(k.keyEncoder()),
 		ProduceWithValEncoder(k.valEncoder()),
 	}

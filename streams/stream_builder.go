@@ -142,7 +142,9 @@ func (b *StreamBuilder) GlobalTable(topic string, keyEnc, valEnc encoding.Encode
 
 	src := NewKSource(topic,
 		ConsumeWithKeyEncoder(keyEnc),
-		ConsumeWithValEncoder(valEnc))
+		ConsumeWithValEncoder(valEnc),
+		markAsGlobal(),
+	)
 
 	if gTableOpts.store == nil {
 		store, err := b.storeRegistry.CreateOrReturn(storeName, keyEnc, valEnc, gTableOpts.storeOptions...)
@@ -185,11 +187,6 @@ func (b *StreamBuilder) GlobalTable(topic string, keyEnc, valEnc encoding.Encode
 func (b *StreamBuilder) Build() (topology.Topology, error) {
 	b.builderCtx = b.newBuilderCtx()
 	return b.tpBuilder.Build(b.builderCtx)
-}
-
-func (b *StreamBuilder) Reset() error {
-	b.builderCtx = b.newBuilderCtx()
-	return b.tpBuilder.Reset(b.builderCtx)
 }
 
 func (b *StreamBuilder) StoreRegistry() stores.Registry {

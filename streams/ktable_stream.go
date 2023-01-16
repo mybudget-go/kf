@@ -99,7 +99,7 @@ func (tbl *kTableStream) Each(eachFunc processors.EachFunc, opts ...StreamOption
 
 func (tbl *kTableStream) join(table Table, valMapper processors.JoinValueMapper, typ processors.JoinerType, opts ...JoinOption) Table {
 	// Mark sources for co partitioning
-	tbl.source().ShouldCoPartitionedWith(table.source())
+	table.source().ShouldCoPartitionedWith(tbl.source())
 
 	tbl.stpBuilder.AddStore(table.stateStore())
 
