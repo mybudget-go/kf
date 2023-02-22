@@ -84,10 +84,17 @@ func (a *kAdmin) reconnect() error {
 	}
 
 	a.mu.Lock()
-	a.mu.Unlock()
 	a.admin = admin
+	a.mu.Unlock()
 
 	return nil
+}
+
+func (a *kAdmin) client() sarama.ClusterAdmin {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	return a.admin
 }
 
 func (a *kAdmin) FetchInfo(topics []string) (map[string]*kafka.Topic, error) {
@@ -95,13 +102,10 @@ func (a *kAdmin) FetchInfo(topics []string) (map[string]*kafka.Topic, error) {
 		return nil, errors.New(`empty topic list`)
 	}
 
-	a.mu.RLock()
-	defer a.mu.RUnlock()
-
 	var reconCount int
 	// This to prevent https://github.com/Shopify/sarama/issues/2215 due to broker connections.max.idle.ms
 RETRY:
-	topicMeta, err := a.admin.DescribeTopics(topics)
+	topicMeta, err := a.client().DescribeTopics(topics)
 	if err != nil {
 		if _, ok := err.(*net.OpError); ok && reconCount < 3 {
 			if recErr := a.reconnect(); recErr != nil {
@@ -154,10 +158,7 @@ RETRY:
 }
 
 func (a *kAdmin) ListTopics() ([]string, error) {
-	a.mu.RLock()
-	defer a.mu.RUnlock()
-
-	topics, err := a.admin.ListTopics()
+	topics, err := a.client().ListTopics()
 	if err != nil {
 		return nil, errors.Wrap(err, `cannot get metadata`)
 	}
@@ -172,9 +173,6 @@ func (a *kAdmin) ListTopics() ([]string, error) {
 }
 
 func (a *kAdmin) CreateTopics(topics []*kafka.Topic) error {
-	a.mu.RLock()
-	defer a.mu.RUnlock()
-
 	var tpNames []string
 	for _, info := range topics {
 		tpNames = append(tpNames, info.Name)
@@ -190,7 +188,7 @@ func (a *kAdmin) CreateTopics(topics []*kafka.Topic) error {
 			details.ConfigEntries[cName] = &conf
 		}
 
-		err := a.admin.CreateTopic(info.Name, details, false)
+		err := a.client().CreateTopic(info.Name, details, false)
 		if err != nil {
 			if e, ok := err.(*sarama.TopicError); ok && (e.Err == sarama.ErrTopicAlreadyExists || e.Err == sarama.ErrNoError) {
 				a.logger.Warn(err)
@@ -240,11 +238,8 @@ func (a *kAdmin) DeleteTopics(topics []string) error {
 		return nil
 	}
 
-	a.mu.RLock()
-	defer a.mu.RUnlock()
-
 	for _, topic := range topics {
-		err := a.admin.DeleteTopic(topic)
+		err := a.client().DeleteTopic(topic)
 		if err != nil && !errors.Is(err, sarama.ErrUnknownTopicOrPartition) {
 			return errors.Wrap(err, fmt.Sprintf(`could not delete topic [%s]`, topic))
 		}
@@ -276,7 +271,7 @@ func (a *kAdmin) verifyAction(action string, topics []string) {
 }
 
 func (a *kAdmin) Close() {
-	if err := a.admin.Close(); err != nil {
+	if err := a.client().Close(); err != nil {
 		a.logger.Warn(fmt.Sprintf(`kafkaAdmin cannot close broker : %+v`, err))
 	}
 }

@@ -308,6 +308,9 @@ MAIN:
 			}
 
 			t.dataChan <- NewTaskRecord(record)
+			t.logger.TraceContext(record.Ctx(),
+				`Record send to processing chan`, `DataChan length`, len(t.dataChan))
+
 		}
 	}
 
@@ -353,6 +356,9 @@ MAIN:
 				t.reProcessCommitBuffer(err, nil)
 				continue
 			}
+
+			t.logger.TraceContext(record.Ctx(),
+				`Record processed. Sending to commit buffer`, record.String())
 
 			if err := t.commitBuffer.Add(taskRecord); err != nil {
 				t.options.failedMessageHandler(err, record)

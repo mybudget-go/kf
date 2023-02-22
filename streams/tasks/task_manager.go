@@ -132,11 +132,9 @@ func (t *taskManager) addTask(ctx topology.BuilderContext, id TaskID, subTopolog
 	})
 
 	tsk.commitBuffer = newCommitBuffer(
-		tsk.options.buffer,
 		subTp,
 		producer,
 		session,
-		nil,
 		logger.NewLog(log.Prefixed(`Buffer`)),
 		tsk.metrics.reporter,
 	)

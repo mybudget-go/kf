@@ -52,7 +52,7 @@ type commitBuffer struct {
 	logger log.Logger
 }
 
-func newCommitBuffer(config BufferConfig, topology topology.SubTopology, producer kafka.Producer, session kafka.GroupSession, onFlush OnFlush, logger log.Logger, reporter metrics.Reporter) *commitBuffer {
+func newCommitBuffer(topology topology.SubTopology, producer kafka.Producer, session kafka.GroupSession, logger log.Logger, reporter metrics.Reporter) *commitBuffer {
 	buf := &commitBuffer{
 		mu:        &sync.Mutex{},
 		offsetMap: map[string]kafka.ConsumerOffset{},
@@ -93,6 +93,8 @@ func (b *commitBuffer) Add(record *Record) error {
 		Offset:    record.Offset() + 1,
 	}
 
+	b.logger.TraceContext(record.Ctx(), `Record stored in commit buffer`, record.String())
+
 	return nil
 }
 
@@ -108,8 +110,9 @@ func (b *commitBuffer) Flush() error {
 }
 
 func (b *commitBuffer) flush() error {
+	b.logger.Trace(`Commit buffer flushing...`)
+	defer b.logger.Trace(`Commit buffer flushed`)
 	count := len(b.records)
-
 	if count < 1 {
 		return nil
 	}
@@ -118,12 +121,10 @@ func (b *commitBuffer) flush() error {
 		b.metrics.batchSize.Count(float64(count), nil)
 	}()
 
-	return b.commit(nil, 0)
+	return b.commit()
 }
 
-func (b *commitBuffer) commit(previousErr error, itr int) error {
-	itr++
-
+func (b *commitBuffer) commit() error {
 	offsets := make([]kafka.ConsumerOffset, 0)
 	if len(b.offsetMap) > 0 {
 		for i := range b.offsetMap {
@@ -175,7 +176,7 @@ func (b *commitBuffer) commit(previousErr error, itr int) error {
 }
 
 func (b *commitBuffer) Reset(dueTo error) error {
-	b.logger.Warn(fmt.Sprintf(`Buffer resetting due to %s...`, dueTo))
+	b.logger.Warn(fmt.Sprintf(`Commit Buffer resetting due to %s...`, dueTo))
 	defer b.logger.Info(`Commit Buffer resetted`)
 
 	b.mu.Lock()

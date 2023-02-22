@@ -135,8 +135,6 @@ func (p *librdTxProducer) ProduceAsync(ctx context.Context, message kafka.Record
 }
 
 func (p *librdTxProducer) handleTxError(ctx context.Context, err error, reason string, retry func() error) error {
-	//p.metrics.produceErrors.Count(1, map[string]string{`error`: err.Error()})
-
 	if err.(librdKafka.Error).IsRetriable() {
 		p.config.Logger.WarnContext(ctx, fmt.Sprintf(`%s due to (%s), retrying...`, reason, err))
 		return retry()
