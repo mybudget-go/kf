@@ -77,10 +77,12 @@ func (r *streamConsumerInstance) OnPartitionAssigned(_ context.Context, session 
 			defer wg.Done()
 			tsk, err := r.taskManager.Task(mapping.TaskId())
 			if err != nil {
-				panic(err)
+				panic(err.Error())
 			}
 
-			tsk.Init()
+			if err := tsk.Init(); err != nil {
+				panic(err.Error())
+			}
 
 		}(&wg, mapping)
 	}

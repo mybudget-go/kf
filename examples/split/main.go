@@ -4,7 +4,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"github.com/bxcodec/faker/v3"
 	"github.com/gmbyapa/kstream/kafka"
 	"github.com/gmbyapa/kstream/kafka/adaptors/librd"
 	"github.com/gmbyapa/kstream/streams"
@@ -16,24 +15,23 @@ import (
 	"time"
 )
 
-var bootstrapServers = flag.String(`bootstrap-servers`, `localhost:9092`,
+var bootstrapServers = flag.String(`bootstrap-servers`, `192.168.0.101:9092`,
 	`A comma seperated list Kafka Bootstrap Servers`)
 
-const TopicTextLines = `textlines`
-const TopicWordCount = `word-counts`
+const TopicNumbers = `numbers`
 
 func main() {
 	flag.Parse()
 
 	config := streams.NewStreamBuilderConfig()
 	config.BootstrapServers = strings.Split(*bootstrapServers, `,`)
-	config.ApplicationId = `word-count`
+	config.ApplicationId = `kstream-branching`
 	config.Consumer.Offsets.Initial = kafka.OffsetEarliest
 
 	seed(config.Logger)
 
 	builder := streams.NewStreamBuilder(config)
-	buildTopology(config.Logger, builder)
+	buildTopology(builder)
 
 	topology, err := builder.Build()
 	if err != nil {
@@ -59,30 +57,23 @@ func main() {
 	}
 }
 
-func buildTopology(logger log.Logger, builder *streams.StreamBuilder) {
-	stream := builder.KStream(TopicTextLines, encoding.StringEncoder{}, encoding.StringEncoder{})
-	stream.Each(func(ctx context.Context, key, value interface{}) {
-		logger.Debug(`Word count for : ` + value.(string))
-	}).FlatMapValues(func(ctx context.Context, key, value interface{}) (values []interface{}, err error) {
-		for _, word := range strings.Split(value.(string), ` `) {
-			values = append(values, word)
-		}
-		return
-	}).SelectKey(func(ctx context.Context, key, value interface{}) (kOut interface{}, err error) {
-		return value, nil
-	}).Repartition(`textlines-by-word`).Aggregate(`word-count`,
-		func(ctx context.Context, key, value, previous interface{}) (newAgg interface{}, err error) {
-			var count int
-			if previous != nil {
-				count = previous.(int)
-			}
-			count++
-			newAgg = count
+func buildTopology(builder *streams.StreamBuilder) {
+	stream := builder.KStream(TopicNumbers, encoding.NoopEncoder{}, encoding.IntEncoder{})
+	splitted := stream.Split()
+	splitted.New(`odd`, func(ctx context.Context, key interface{}, val interface{}) (bool, error) {
+		return val.(int)%2 != 0, nil
+	})
+	splitted.New(`even`, func(ctx context.Context, key interface{}, val interface{}) (bool, error) {
+		return val.(int)%2 == 0, nil
+	})
 
-			return
-		}, streams.AggregateWithValEncoder(encoding.IntEncoder{})).ToStream().Each(func(ctx context.Context, key, value interface{}) {
-		println(fmt.Sprintf(`%s:%d`, key, value))
-	}).To(TopicWordCount)
+	splitted.Branch(`odd`).Each(func(ctx context.Context, key, value interface{}) {
+		println(`Odd number:`, value.(int))
+	})
+
+	splitted.Branch(`even`).Each(func(ctx context.Context, key, value interface{}) {
+		println(`Even number:`, value.(int))
+	})
 }
 
 func seed(logger log.Logger) {
@@ -105,12 +96,12 @@ func seed(logger log.Logger) {
 		panic(err)
 	}
 
-	for i := 0; i < 100; i++ {
+	for i := 1; i <= 100; i++ {
 		record := producer.NewRecord(
 			context.Background(),
-			[]byte(`test-key`),
-			[]byte(faker.Sentence()),
-			TopicTextLines,
+			nil,
+			[]byte(fmt.Sprint(i)),
+			TopicNumbers,
 			kafka.PartitionAny,
 			time.Now(),
 			nil,
@@ -122,7 +113,7 @@ func seed(logger log.Logger) {
 			panic(err)
 		}
 
-		logger.Debug(`message produced to textlines`)
+		logger.Debug(`message produced to`, TopicNumbers)
 	}
 
 	if err := txProducer.CommitTransaction(context.Background()); err != nil {

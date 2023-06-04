@@ -22,7 +22,7 @@ type streamConsumer struct {
 	running   chan struct{}
 }
 
-func (r *streamConsumer) Init(topologyBuilder topology.Topology) error { return nil }
+func (r *streamConsumer) Init(_ topology.Topology) error { return nil }
 
 func (r *streamConsumer) Run(topologyBuilder topology.Topology) error {
 	r.logger.Info(`StreamConsumer starting...`)

@@ -92,7 +92,7 @@ type Stream interface {
 	LeftJoinTable(table Table, valMapper processors.JoinValueMapper, opts ...JoinOption) Stream
 	joinTable(table Table, valMapper processors.JoinValueMapper, typ processors.JoinerType, opts ...JoinOption) Stream
 	// Through redirect the stream through an intermediate topic
-	// Deprecated: use RePartition instead
+	// Deprecated: use Repartition instead
 	Through(topic string, options ...DslOption) Stream
 	ToTable(store string, options ...TableOpt) Table
 	Merge(stream Stream) Stream

@@ -78,7 +78,7 @@ func (t *taskManager) addTask(ctx topology.BuilderContext, id TaskID, subTopolog
 
 	logger := t.logger.NewLog(log.Prefixed(id.String()))
 	producer, err := ctx.ProducerBuilder()(func(config *kafka.ProducerConfig) {
-		txID := fmt.Sprintf(`%s-%s`, ctx.ApplicationId(), id.UniqueID())
+		txID := fmt.Sprintf(`%s-%s(%s)`, ctx.ApplicationId(), id.String(), id.UniqueID())
 		config.Id = txID
 		config.Transactional.Id = txID
 		config.Logger = logger
@@ -119,7 +119,7 @@ func (t *taskManager) addTask(ctx topology.BuilderContext, id TaskID, subTopolog
 		closing:            make(chan struct{}),
 		ready:              make(chan struct{}),
 		dataChan:           make(chan *Record, 10),
-		runGroup:           async.NewRunGroup(logger),
+		changelogs:         async.NewRunGroup(logger),
 		options:            taskOpts,
 	}
 
@@ -185,7 +185,7 @@ func (t *taskManager) addGlobalTask(ctx topology.BuilderContext, id TaskID, subT
 		ctx:                topologyCtx,
 		processingStopping: make(chan struct{}),
 		closing:            make(chan struct{}),
-		runGroup:           async.NewRunGroup(logger),
+		changelogs:         async.NewRunGroup(logger),
 		options:            taskOpts,
 	}
 

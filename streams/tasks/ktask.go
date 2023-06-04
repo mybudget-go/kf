@@ -139,7 +139,7 @@ type task struct {
 	}
 
 	shutDownOnce sync.Once
-	runGroup     *async.RunGroup
+	changelogs   *async.RunGroup
 }
 
 func (t *task) ID() TaskID {
@@ -157,7 +157,7 @@ func (t *task) Restore() error {
 	// Each StateStore instance in the task has to be restored before the processing start
 	for _, store := range t.subTopology.StateStores() {
 		changelog := store
-		t.runGroup.Add(func(opts *async.Opts) error {
+		t.changelogs.Add(func(opts *async.Opts) error {
 			defer func(start time.Time) {
 				t.metrics.stateStoreRecoveryLatencyMilliseconds.Observe(float64(time.Since(start).Milliseconds()),
 					map[string]string{`store`: changelog.Name()})
@@ -235,7 +235,7 @@ func (t *task) Init() error {
 }
 
 func (t *task) Sync() error {
-	return t.runGroup.Run()
+	return t.changelogs.Run()
 }
 
 func (t *task) Chan() chan *Record {
@@ -243,7 +243,7 @@ func (t *task) Chan() chan *Record {
 }
 
 func (t *task) Ready() error {
-	if err := t.runGroup.Ready(); err != nil {
+	if err := t.changelogs.Ready(); err != nil {
 		return err
 	}
 
@@ -422,7 +422,7 @@ func (t *task) shutdown(err error) {
 
 		defer t.logger.Info(`Stopped`)
 
-		t.runGroup.Stop()
+		t.changelogs.Stop()
 
 		if t.blockingMode {
 			t.logger.Info(`Waiting until processing stopped...`)

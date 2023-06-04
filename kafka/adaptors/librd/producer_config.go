@@ -4,6 +4,7 @@ import (
 	librdKafka "github.com/confluentinc/confluent-kafka-go/kafka"
 	"github.com/gmbyapa/kstream/kafka"
 	"github.com/gmbyapa/kstream/pkg/errors"
+	"github.com/tryfix/log"
 	"strings"
 )
 
@@ -35,6 +36,10 @@ func (conf *ProducerConfig) setUp() error {
 	}
 
 	if err := conf.Librd.SetKey(`go.logs.channel.enable`, true); err != nil {
+		return errors.New(err.Error())
+	}
+
+	if err := conf.Librd.SetKey(`log_level`, toLibrdLogLevel(log.INFO)); err != nil {
 		return errors.New(err.Error())
 	}
 

@@ -384,3 +384,18 @@ func (p *librdProducer) librdProducer() *librdKafka.Producer {
 
 	return p.baseProducer
 }
+
+func toLibrdLogLevel(level log.Level) int {
+	switch level {
+	case log.ERROR:
+		return 2
+	case log.WARN:
+		return 5
+	case log.INFO:
+		return 6
+	case log.DEBUG:
+		return 7
+	}
+
+	return 0
+}

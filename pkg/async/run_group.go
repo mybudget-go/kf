@@ -7,18 +7,27 @@ import (
 	"sync"
 )
 
+// Fn is a function that can be run asynchronously.
 type Fn func(*Opts) error
 
+// Opts contains options for running a function.
 type Opts struct {
-	stopping  <-chan struct{}
+	// stopping is a channel that can be used to signal that the function should stop.
+	stopping <-chan struct{}
+
+	// readyOnce ensures that Ready() can only be called once.
 	readyOnce sync.Once
-	ready     chan struct{}
+
+	// ready is a channel that is closed when the function is ready(eg: bootstrap process, state recovery, etc) to run.
+	ready chan struct{}
 }
 
+// Stopping returns a channel that can be used to signal that the function should stop.
 func (opts *Opts) Stopping() <-chan struct{} {
 	return opts.stopping
 }
 
+// Ready signals that the function is ready to run.
 func (opts *Opts) Ready() {
 	opts.readyOnce.Do(func() {
 		close(opts.ready)
@@ -27,6 +36,7 @@ func (opts *Opts) Ready() {
 
 var ErrInterrupted = errors.New(`interrupted`)
 
+// RunGroup runs a group of functions asynchronously.
 type RunGroup struct {
 	fns          []Fn
 	wg           *sync.WaitGroup
@@ -51,6 +61,8 @@ func NewRunGroup(logger log.Logger, fns ...Fn) *RunGroup {
 	}
 }
 
+// Add adds a function to the RunGroup. The function will be executed when the Run method is called.
+// Note: RunGroup does not support dynamically adding functions to a running group.
 func (tg *RunGroup) Add(fn Fn) *RunGroup {
 	tg.readyWg.Add(1)
 	tg.fns = append(tg.fns, fn)
@@ -59,11 +71,14 @@ func (tg *RunGroup) Add(fn Fn) *RunGroup {
 
 func (tg *RunGroup) Run() error {
 	notifyErrOnce := &sync.Once{}
-	// run each task on a separate go-routine
+
 	tg.wg.Add(len(tg.fns))
 
+	// Run each function on a separate go-routine.
 	for _, fn := range tg.fns {
 		ready := make(chan struct{}, 1)
+
+		// Wait for the function to become ready before starting it.
 		go func() {
 			<-ready
 			tg.readyWg.Done()
@@ -78,13 +93,14 @@ func (tg *RunGroup) Run() error {
 			}
 
 			if err := fn(opts); err != nil {
+				// Only the first error needs to be notified
 				notifyErrOnce.Do(func() {
 					tg.err = err
 				})
 				tg.notifyShutDown(err)
 			}
 
-			// when function returns make it ready anyway
+			// When function returns make it ready anyway
 			opts.Ready()
 			tg.wg.Done()
 		}(fn)
@@ -121,5 +137,6 @@ func (tg *RunGroup) Ready() error {
 func (tg *RunGroup) Stop() {
 	tg.notifyShutDown(nil)
 	defer tg.logger.Info(`Processes stopped`)
+
 	<-tg.stopped
 }

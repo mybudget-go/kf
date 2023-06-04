@@ -121,7 +121,7 @@ func (p *librdTxProducer) ProduceAsync(ctx context.Context, message kafka.Record
 
 	kMessage, err := p.prepareMessage(message)
 	if err != nil {
-		return p.handleTxError(ctx, err, `ProduceAsync failed`, nil)
+		return p.handleTxError(ctx, err, `prepareMessage failed`, nil)
 	}
 
 	err = p.librdProducer.librdProducer().Produce(kMessage, nil)
@@ -129,7 +129,7 @@ func (p *librdTxProducer) ProduceAsync(ctx context.Context, message kafka.Record
 		return p.handleTxError(ctx, err, `ProduceAsync failed`, nil)
 	}
 
-	p.config.Logger.DebugContext(ctx, fmt.Sprintf(`Record %s queued`, message))
+	p.config.Logger.TraceContext(ctx, fmt.Sprintf(`Record %s queued`, message))
 
 	return nil
 }

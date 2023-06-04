@@ -59,13 +59,13 @@ func NewPartitionConsumer(configs *ConsumerConfig) (kafka.PartitionConsumer, err
 		return nil, errors.Wrap(err, `producer configs setup failed`)
 	}
 
-	con, err := librdKafka.NewConsumer(configs.Librd)
+	consumer, err := librdKafka.NewConsumer(configs.Librd)
 	if err != nil {
 		return nil, errors.Wrap(err, `new consumer failed`)
 	}
 
 	pc := &partitionConsumer{
-		consumer:        con,
+		consumer:        consumer,
 		config:          configs,
 		partitions:      map[string]*partition{},
 		logger:          configs.ConsumerConfig.Logger.NewLog(log.Prefixed(`PartitionConsumer`)),
@@ -257,15 +257,6 @@ MAIN:
 				}
 
 				pt.metrics.endToEndLatency.Observe(float64(time.Since(record.Timestamp()).Microseconds()), nil)
-
-				if record.Offset() == pt.partitionEnd-1 {
-					pt.Send(&kafka.PartitionEnd{
-						Tps: []kafka.TopicPartition{{
-							Topic:     record.Topic(),
-							Partition: record.Partition(),
-						}},
-					})
-				}
 
 				pt.Send(record)
 

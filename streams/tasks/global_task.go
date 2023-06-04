@@ -14,7 +14,7 @@ func (t *globalTask) Init() error {
 	defer func() {
 		for _, store := range t.subTopology.StateStores() {
 			stateStore := store
-			t.runGroup.Add(func(opts *async.Opts) error {
+			t.changelogs.Add(func(opts *async.Opts) error {
 				stateSynced := make(chan struct{}, 1)
 				go func() {
 					defer async.LogPanicTrace(t.logger)
@@ -46,6 +46,6 @@ func (t *globalTask) Start(ctx context.Context, claim kafka.PartitionClaim, s ka
 }
 
 func (t *globalTask) Stop() error {
-	t.runGroup.Stop()
+	t.changelogs.Stop()
 	return nil
 }

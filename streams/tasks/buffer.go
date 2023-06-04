@@ -110,8 +110,6 @@ func (b *commitBuffer) Flush() error {
 }
 
 func (b *commitBuffer) flush() error {
-	b.logger.Trace(`Commit buffer flushing...`)
-	defer b.logger.Trace(`Commit buffer flushed`)
 	count := len(b.records)
 	if count < 1 {
 		return nil
